@@ -1,0 +1,59 @@
+@startuml
+
+interface AVPlayer <<iOS>> #powderblue
+interface AVAudioEngine <<iOS>> #powderblue
+interface AVAudioPlayerNode <<iOS>> #powderblue
+interface AVAudioSession <<iOS>> #powderblue
+
+
+class DAAPlayMain
+
+class MainMenuView <<UI>> #wheat
+class MainMenuViewModel #gold
+
+class ExpertView <<UI>> #wheat
+class ExpertViewModel #gold
+
+class MusicPlayerView <<UI>> #wheat
+class MusicPlayerViewModel #gold
+
+class VideoPlayerView <<UI>> #wheat
+class VideoPlayerViewModel #gold
+
+class AC4FileParser
+class AudioPlayerDAA
+class DAADecoder <<wrapper>>
+class libdaa <<DAA>> #pink
+
+class AudioDeviceManager <<singleton>>
+
+
+DAAPlayMain *-- MainMenuView
+MainMenuView *--- MainMenuViewModel
+
+MainMenuView o-- ExpertView
+MainMenuView o-- VideoPlayerView
+MainMenuView o-- MusicPlayerView
+
+VideoPlayerView *-- VideoPlayerViewModel
+MusicPlayerView *-- MusicPlayerViewModel
+ExpertView *-- ExpertViewModel
+
+VideoPlayerViewModel o-- AudioPlayerDAA
+MusicPlayerViewModel o-- AudioPlayerDAA
+
+AudioPlayerDAA o-- AC4FileParser
+AudioPlayerDAA o-- DAADecoder
+AudioPlayerDAA <|-- AVAudioPlayerNode : inherits
+DAADecoder o-- libdaa
+
+VideoPlayerViewModel -- AVPlayer : invokes
+VideoPlayerViewModel -- AVAudioEngine : invokes
+MusicPlayerViewModel -- AVAudioEngine : invokes
+AVAudioPlayerNode .. AVAudioEngine
+
+AudioDeviceManager -- AVAudioSession : invokes
+
+AudioPlayerDAA -- AudioDeviceManager
+
+@enduml

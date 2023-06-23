@@ -1,0 +1,22 @@
+{
+  "music": [
+    {
+      "id": 1,
+      "title": "Channel Check",
+      "artist": "Dolby",
+      "duration": 36,
+      "badge": "AC-4 IMS @ 320kbps",
+      "audio": "ChannelCheck.ac4"
+    }
+  ],
+  "video": [
+    {
+      "id": 1,
+      "title": "Channel Check",
+      "duration": 36,
+      "badge": "AC-4 IMS @ 320kbps",
+      "video": "ChannelCheck.mp4",
+      "audio": "ChannelCheck.ac4"
+    }
+  ]
+}
