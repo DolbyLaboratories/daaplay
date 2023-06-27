@@ -70,6 +70,8 @@ DAAPlay does not implement:
 ## Enabling MP4 demuxing and HTTP Live Streaming
 DAAPlay does not implement MP4 demuxing or HTTP Live Streaming (HLS), however Dolby provides developer resources at: [https://ott.dolby.com](https://ott.dolby.com).
 
+Additionally, source code for a Dolby MP4 demuxer is available on Github: [https://github.com/DolbyLaboratories/dlb_mp4demux](https://github.com/DolbyLaboratories/dlb_mp4demux)  
+
 ## Integrating DAA into iOS
 
 Apple offers developers several API options for implementing audio functionality, including `CoreAudio`, `AUGraph`, `AVAudioEngine`, `AVAudioPlayer`, and `AVPlayer`. Each option offers a different trade-off of flexibility, complexity, and abstraction.
