@@ -4,8 +4,6 @@ An example iOS music/video player integration of Dolby Audio for Applications (D
 
 **STOP:** DAAPlay requires the DAA library and API, which are only available to licensees of DAA. See [Dolby Professional](https://professional.dolby.com/licensing/) and [Dolby handbooks](https://handbook.dolby.com/) for information on becoming a licensee.
 
-[[_TOC_]]
-
 # Quick Start
 
 ![Screenshot](img/screenshot.jpg)
