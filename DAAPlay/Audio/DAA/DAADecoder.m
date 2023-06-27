@@ -41,7 +41,7 @@
 @property int packetCounter;
 @property AVAudioFormat *format;
 @property (nonatomic) AVAudioPCMBuffer *audioOutputBuffer;
-@property int16_t *pcmOutputBuffer;
+@property float *pcmOutputBuffer;
 @property int numSamplesBuffered;
 
 @end
@@ -85,7 +85,7 @@
       break;
   }
   
-  queryIp.output_datatype = DLB_BUFFER_SHORT_16;
+  queryIp.output_datatype = DLB_BUFFER_FLOAT;
   queryIp.timescale = _timescale;
   
   err = dlb_decode_query_info(&queryIp, &queryOp);
@@ -131,10 +131,10 @@
   
   /* Initialize the PCM output buffer */
   _maxOutputBufferSize = queryMemOp.output_buffer_size;
-  _pcmOutputBuffer = (int16_t *) calloc(_maxOutputBufferSize, sizeof(int16_t));
+  _pcmOutputBuffer = (float *) calloc(_maxOutputBufferSize, sizeof(float));
   
   /* Initialize the AVAudioFormat */
-  _format = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatInt16
+  _format = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
                                              sampleRate:SAMPLE_RATE
                                                channels:NUM_CHANNELS
                                             interleaved:true];
@@ -215,7 +215,7 @@
     return false;
   }
   
-  memset(_pcmOutputBuffer, 0, _maxOutputBufferSize * sizeof(int16_t));
+  memset(_pcmOutputBuffer, 0, _maxOutputBufferSize * sizeof(float));
   _outputDlbBuffer.ppdata[0] = &_pcmOutputBuffer[0];
   _outputDlbBuffer.ppdata[1] = &_pcmOutputBuffer[1];
   ioParams.pcm_output_buf = &_outputDlbBuffer;
@@ -280,8 +280,8 @@
       // Partial block: Consume the first _startUpSamples samples and output the rest
       _audioOutputBuffer.frameLength = (unsigned int) samplesToCopy;
       memcpy(_audioOutputBuffer.audioBufferList->mBuffers[0].mData,
-             &_outputDlbBuffer.ppdata[0][(_startUpSamples + offsetToCurrentBlock) * NUM_CHANNELS * sizeof(int16_t)],
-             samplesToCopy * NUM_CHANNELS * sizeof(int16_t)
+             &_outputDlbBuffer.ppdata[0][(_startUpSamples + offsetToCurrentBlock) * NUM_CHANNELS * sizeof(float)],
+             samplesToCopy * NUM_CHANNELS * sizeof(float)
              );
       _startUpSamples = 0;
     }
@@ -290,8 +290,8 @@
     // Output a regular block (AC4_SAMPLES_PER_BLOCK samples)
     _audioOutputBuffer.frameLength = AC4_SAMPLES_PER_BLOCK;
     memcpy(_audioOutputBuffer.audioBufferList->mBuffers[0].mData,
-           &_outputDlbBuffer.ppdata[0][offsetToCurrentBlock * NUM_CHANNELS * sizeof(int16_t)],
-           AC4_SAMPLES_PER_BLOCK * NUM_CHANNELS * sizeof(int16_t)
+           &_outputDlbBuffer.ppdata[0][offsetToCurrentBlock * NUM_CHANNELS * sizeof(float)],
+           AC4_SAMPLES_PER_BLOCK * NUM_CHANNELS * sizeof(float)
            );
   }
   
