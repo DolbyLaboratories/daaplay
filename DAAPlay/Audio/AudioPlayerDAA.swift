@@ -30,7 +30,7 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
   var log: Logger {
     AudioPlayerDAA.logger
   }
-
+  
   @Published var daaVersion: String = ""
   @Published var daaAPIVersion: String = ""
   @Published var coreDecoderVersion: String = ""
@@ -46,11 +46,11 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
   public var progress: Double {
     return Double(currentFrame) * Constants.AC4_SECONDS_PER_FRAME
   }
-
+  
   private var scheduledTime: TimeInterval = 0
   private var renderTimeEpoch: TimeInterval = 0
   private var renderTimeEpochAdjustment: TimeInterval = 0
-
+  
   private let parser = AC4FileParser()
   private let decoder = DAADecoder()
   private var currentFrame = 0
@@ -61,14 +61,16 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
   private var forceResync: Bool = false
   
   private var interruptPlayingBuffer: Bool = false
-
+  
   private let outputFormat = AVAudioFormat(
     standardFormatWithSampleRate: Constants.SAMPLE_RATE,
-    channels: UInt32(Constants.NUM_CHANNELS))
-
+    channelLayout: AVAudioChannelLayout(
+      layoutTag: kAudioChannelLayoutTag_Binaural)!
+  )
+  
   private let daaDecoderQueue = DispatchQueue(label: "daa.decoder.queue")
   private var schedulingTimer: Timer?
-
+  
   // MARK: - Init
   override init() {
     super.init()
@@ -81,27 +83,27 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
     coreDecoderVersion = decoder.coreDecoderVersion
     daaLatencyInSamples = Int(decoder.latencyInSamples)
   }
-
+  
   // MARK: - Deinit
   deinit {
     schedulingTimer?.invalidate()
     schedulingTimer = nil
     decoder.end()
   }
-
+  
   // MARK: - Open file
-
+  
   func openFile(url: URL) throws -> AVAudioFormat? {
     do {
       // Read the entire .ac4 file into memory
       let data = try Data(contentsOf: url)
-
+      
       // Parse out each frame
       try parser.parse(data: data)
-
+      
       // Assume AC-4 frame rate is 2048 samp/frame
       duration = Double(parser.frames.count) * Constants.AC4_SECONDS_PER_FRAME
-
+      
       // A timer schedules decoded audio to at least DAA_AUDIO_BUFFER_SECONDS ahead of buffer exhaustion
       schedulingTimer = Timer.scheduledTimer(
         timeInterval: Constants.FIVE_TWELVE_AUDIO_SAMPLES,
@@ -109,9 +111,9 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
         selector: #selector(schedulingCallback),
         userInfo: nil,
         repeats: true)
-
+      
       return outputFormat
-
+      
     } catch {
       log.error("Error reading the audio file: \(error.localizedDescription)")
       throw error
@@ -157,8 +159,8 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
         }
         self.priorLastRenderTime = currentRenderTime
         
-  //        self.log.debug(
-  //          "Scheduled: \(self.scheduledTime) Render: \(currentRenderTime) Est buffered: \(estimatedBufferedTime)")
+        //        self.log.debug(
+        //          "Scheduled: \(self.scheduledTime) Render: \(currentRenderTime) Est buffered: \(estimatedBufferedTime)")
         
         // At start-up, the decoder will consume its own start-up samples, and this loop will
         // iterate multiple times.
@@ -183,9 +185,9 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
       }
     }
   }
-
+  
   // MARK: Play, Pause
-
+  
   override func play() {
     _ = playAndDetectStartOfStream()
   }
@@ -193,7 +195,7 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
   func playAndDetectStartOfStream() -> Bool {
     var isStartOfStream: Bool = false
     var isEndOfStream: Bool = false
-
+    
     // The following order of operations is critical
     
     //  1. If EOS, reset currentFrame and scheduled time
@@ -208,7 +210,7 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
     
     //  3. Play
     super.play()
-
+    
     //  4. If EOF, reset the render time epoch
     if isEndOfStream {
       if let nodeTime = self.lastRenderTime,
@@ -216,13 +218,13 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
         renderTimeEpoch = TimeInterval(playerTime.sampleTime) / playerTime.sampleRate
       }
     }
-
+    
     //  5. Finally, set state to playing, which unlocks the timer to start scheduling audio
     state = .playing
     
     return isStartOfStream
   }
-
+  
   func pauseAndResync() -> Double {
     if hasStarted {
       self.pause()
@@ -235,16 +237,16 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
     state = .paused
     super.pause()
   }
-
+  
   // MARK: Decoder configuration
   
   func setEndpoint(endp: Endpoint) {
     endpoint = endp
     self.decoder.setHeadphoneEndpoint(endpoint == .headphones)
   }
-
+  
   // MARK: Schedule audio
-
+  
   private func scheduleNextAudio() throws -> Bool {
     var didSchedule: Bool = false
     do {
@@ -281,10 +283,9 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
         if decodedBlock.buffer.frameLength > 0 {
           
           // Convert buffer format
-          guard let opf = outputFormat
-          else { throw AudioPlayerDAAError.failedToCreatePCMBuffer }
-          guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: opf, frameCapacity: decodedBlock.buffer.frameLength),
-                let converter = AVAudioConverter(from: decodedBlock.buffer.format, to: opf)
+          guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat,
+                                                    frameCapacity: decodedBlock.buffer.frameLength),
+                let converter = AVAudioConverter(from: decodedBlock.buffer.format, to: outputFormat)
           else { throw AudioPlayerDAAError.failedToCreatePCMBuffer }
           
           try converter.convert(to: outputBuffer, from: decodedBlock.buffer)
@@ -312,38 +313,38 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
     }
     return didSchedule
   }
-
+  
   // MARK: Trick play
-
+  
   func seek(offset: Double) -> Double {
     let seekFrame: Int = currentFrame + Int(offset / Constants.AC4_SECONDS_PER_FRAME)
     return seek(frame: seekFrame)
   }
-
+  
   func seek(time: Double) -> Double {
     let seekFrame: Int = Int(time / Constants.AC4_SECONDS_PER_FRAME)
     return seek(frame: seekFrame)
   }
-
+  
   func seek(frame: Int) -> Double {
     let wasPlaying = state == .playing
     var seekFrame = frame
-
+    
     // Don't seek before the start
     seekFrame = max(seekFrame, 0)
-
+    
     // Do not seek if the seek would take us past the end
     if seekFrame > parser.frames.count - 1 {
       return Double(parser.frames.count) * Constants.AC4_SECONDS_PER_FRAME
     }
-
+    
     pause()
-
+    
     // Adjust timing
     renderTimeEpochAdjustment -= Double(seekFrame - currentFrame) * Constants.AC4_SECONDS_PER_FRAME
     currentFrame = seekFrame
     scheduledTime = Double(seekFrame) * Constants.AC4_SECONDS_PER_FRAME
-
+    
     // Any playing buffer should be interrupted upon restart
     interruptPlayingBuffer = true
     
@@ -358,7 +359,7 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
 public enum AudioPlayerDAAError: LocalizedError {
   case failedToDecode
   case failedToCreatePCMBuffer
-
+  
   public var errorDescription: String? {
     switch self {
     case .failedToDecode:
