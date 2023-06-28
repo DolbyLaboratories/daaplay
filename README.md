@@ -1,12 +1,25 @@
+<div align="center">
+
 # DAAPlay
 
-An example iOS music/video player integration of Dolby Audio for Applications (DAA) v3.5.7. 
+![iOS](https://img.shields.io/badge/iOS-000000?style=for-the-badge&logo=ios&logoColor=white)
+![Swift](https://img.shields.io/badge/swift-F54A2A?style=for-the-badge&logo=swift&logoColor=white)
 
-**STOP:** DAAPlay requires the DAA library and API, which are only available to licensees of DAA. See [Dolby Professional](https://professional.dolby.com/licensing/) and [Dolby handbooks](https://handbook.dolby.com/) for information on becoming a licensee.
+DAAPlay is an example iOS music/video player integration of Dolby Audio for Applications (DAA) v3.5.7.
 
+**DAAPlay requires the DAA library and API, which are only available to licensees of DAA.** See [here](https://professional.dolby.com/licensing/) and [here](https://handbook.dolby.com/) for information on becoming a licensee.
+
+[Quick Start](#quick-start) •
+[Features](#features) •
+[Architecture and Code Layout](#architecture-and-code-layout) •
+[Developer Guidance](#developer-guidance) •
+[Version History](#version-history)
+
+![Screenshot](img/screenshot.jpg) 
+
+</div>
+  
 # Quick Start
-
-![Screenshot](img/screenshot.jpg)
 
 From the DAA v3.5.7 SDK:
 1. Copy `lib_daa_ac4dec_ios_generic_float32_release.a` to `DAAPlay/Audio/DAA/v3.5.7/lib`
@@ -42,11 +55,13 @@ DAAPlay does not implement:
 * Sideloading of content
 
 
-# Tested Devices
+## Tested Devices
 
-* iPhone 13 Pro with iOS 16.4, and AirPods (3rd generation)
+* iPhone 13 Pro with iOS 16.4, and AirPods (3rd generation) and AirPods Max
 
-# Directories
+# Architecture and Code Layout
+
+![Screenshot](img/architecture.png)
 
 * `DAAPlay/DAAPlayMain.swift`: main entry point
 * `DAAPlay/Views/`: User interfaces (views), written in SwiftUI
@@ -59,10 +74,6 @@ DAAPlay does not implement:
 * `DAAPlay/Utilities/`: Miscellaneous utility functions
 * `DAAPlay/Supporting Files/Media`: Bundled media files
 * `DAAPlay/Supporting Files/Media/contentPackingList`: Play list, in .json format
-
-# Architecture
-
-![Screenshot](img/architecture.png)
 
 
 # Developer Guidance
@@ -453,10 +464,16 @@ func setEndpoint(endp: Endpoint) {
 
 # Version History
 
-## Version 1.0.0
-* The initial release of DAAPlay targeting DAA v3.5.7 and playback of AC-4 IMS
+## Version 1.0.2
+* No functional changes
+* Replaces LFS-stored files in GitHub with native versions
 
 ## Version 1.0.1
 * Refers users to `dlb_mp4demux` on Github
 * Outputs PCM as float, and signals as "binaural" to iOS
 * Mitigates audio dropouts when UI animations occur by correctly prioritizing audio events with Grand Central Dispatch
+
+## Version 1.0.0
+* The initial release of DAAPlay targeting DAA v3.5.7 and playback of AC-4 IMS
+
+
