@@ -100,25 +100,31 @@ DAAPlay implements "just-in-time" decoding, operating off a ~5ms timer (256 audi
 
 `schedulingCallback()` estimates the amount of audio buffered (`estimatedBufferedTime`) by observing `AVAudioPlayerNode.playerTime`, and comparing to an internal variable tracking the amount of audio scheduled by the player, `scheduledTime`.
 
-A complication is that the OS can initialize `playerTime.sampleTime` to a negative value, leading to an incorrest estimate of the amount of audio buffered. Experimentation suggests that the initial value is -2 x `AVAudioSession.sharedInstance().ioBufferDuration`. To avoid additional latency, DAA calculates the render time from an epoch that is self-initialized and updated.
+The audio scheduling timer runs in a high priority queue, with a level of `.userInteractive`. This is a deliberate design decision intended to avoid audio dropouts due to high-priority premeptive events (ex: UI animations).
+
+One complication is that the OS can initialize `playerTime.sampleTime` to a negative value, leading to an incorrest estimate of the amount of audio buffered. Experimentation suggests that the initial value is -2 x `AVAudioSession.sharedInstance().ioBufferDuration`. To avoid additional latency, DAA calculates the render time from an epoch that is self-initialized and updated.
 
 Further complications arise when audio devices are connected/disconnected, causing a "jump" in the timeline, or a loss of A/V sync (if there is an associated AVPlayer instance). `schedulingCallback()` handles both of these cases. 
 
 ```swift
 // AudioPlayerDAA.swift
+private let daaDecoderQueue = DispatchQueue(label: Bundle.main.bundleIdentifier! + "daa.decoder.queue", qos: .userInteractive)
+
+...
+
 func openFile(url: URL) throws -> AVAudioFormat? {
   ...
   // A timer schedules decoded audio to at least DAA_AUDIO_BUFFER_SECONDS ahead of buffer exhaustion
-  schedulingTimer = Timer.scheduledTimer(
-    timeInterval: Constants.TWO_FIFTY_SIX_AUDIO_SAMPLES,
-    target: self,
-    selector: #selector(schedulingCallback),
-    userInfo: nil,
-    repeats: true)
+  let timer = DispatchSource.makeTimerSource(queue: daaDecoderQueue)
+  timer.setEventHandler { [weak self] in
+    self?.schedulingCallback()
+  }
+  timer.schedule(deadline: .now(), repeating: Constants.TWO_FIFTY_SIX_AUDIO_SAMPLES)
+  timer.resume()
   ...
 }
 
-@objc func schedulingCallback(_: Timer) {
+@objc func schedulingCallback() {
   // Initialize the render time epoch
   if !hasStarted {
     // Experimentation suggests the initial render time is equivalent to 2 x the reported ioBufferDuration

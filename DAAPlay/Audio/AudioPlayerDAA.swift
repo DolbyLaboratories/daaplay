@@ -68,8 +68,10 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
       layoutTag: kAudioChannelLayoutTag_Binaural)!
   )
   
-  private let daaDecoderQueue = DispatchQueue(label: "daa.decoder.queue")
-  private var schedulingTimer: Timer?
+  private let daaDecoderQueue = DispatchQueue(
+                                  label: Bundle.main.bundleIdentifier! + "daa.decoder.queue",
+                                  qos: .userInteractive)
+  private var schedulingTimer: DispatchSourceTimer?
   
   // MARK: - Init
   override init() {
@@ -86,7 +88,7 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
   
   // MARK: - Deinit
   deinit {
-    schedulingTimer?.invalidate()
+    schedulingTimer?.cancel()
     schedulingTimer = nil
     decoder.end()
   }
@@ -105,13 +107,14 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
       duration = Double(parser.frames.count) * Constants.AC4_SECONDS_PER_FRAME
       
       // A timer schedules decoded audio to at least DAA_AUDIO_BUFFER_SECONDS ahead of buffer exhaustion
-      schedulingTimer = Timer.scheduledTimer(
-        timeInterval: Constants.FIVE_TWELVE_AUDIO_SAMPLES,
-        target: self,
-        selector: #selector(schedulingCallback),
-        userInfo: nil,
-        repeats: true)
-      
+      let timer = DispatchSource.makeTimerSource(queue: daaDecoderQueue)
+      timer.setEventHandler { [weak self] in
+          self?.schedulingCallback()
+      }
+      timer.schedule(deadline: .now(), repeating: Constants.TWO_FIFTY_SIX_AUDIO_SAMPLES)
+      timer.resume()
+      schedulingTimer = timer
+
       return outputFormat
       
     } catch {
@@ -122,7 +125,7 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
   
   // MARK: Scheduling callback
   
-  @objc func schedulingCallback(_: Timer) {
+  @objc func schedulingCallback() {
     // Initialize the render time epoch
     if !hasStarted {
       // Experimentation suggests the initial render time is equivalent to 2 x the reported ioBufferDuration
@@ -248,70 +251,64 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
   // MARK: Schedule audio
   
   private func scheduleNextAudio() throws -> Bool {
-    var didSchedule: Bool = false
-    do {
-      didSchedule = try daaDecoderQueue.sync {
-        // Check for final frame
-        if currentFrame >= parser.frames.count {
-          // EOF
-          return false
-        }
-        
-        // log.debug("scheduling frame \(self.currentFrame)")
-        
-        if self.decoder.isReadyToDecode() {
-          
-          // Decode next frame
-          if !self.decoder.decode(parser.frames[currentFrame], timestamp: 0) {
-            throw AudioPlayerDAAError.failedToDecode
-          }
-          currentFrame += 1
-          
-          // Track latency
-          daaLatencyInSamples = Int(self.decoder.latencyInSamples)
-        }
-        
-        guard let decodedBlock = self.decoder.nextBlock()
-        else {
-          throw AudioPlayerDAAError.failedToDecode
-        }
-        
-        assert(decodedBlock.buffer.frameCapacity == Int(Constants.AC4_SAMPLES_PER_BLOCK))
-        
-        // At start-up, the decoder may output empty or partial (i.e. < 256 samples) blocks
-        // After start-up, the decoder will regularly output 256 samples per call
-        if decodedBlock.buffer.frameLength > 0 {
-          
-          // Convert buffer format
-          guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat,
-                                                    frameCapacity: decodedBlock.buffer.frameLength),
-                let converter = AVAudioConverter(from: decodedBlock.buffer.format, to: outputFormat)
-          else { throw AudioPlayerDAAError.failedToCreatePCMBuffer }
-          
-          try converter.convert(to: outputBuffer, from: decodedBlock.buffer)
-          
-          // If interrupting, the next buffer should overwrite un-rendered audio in AVAudioEngine's output buffer
-          var options: AVAudioPlayerNodeBufferOptions = []
-          if interruptPlayingBuffer {
-            options.insert(.interrupts)
-            interruptPlayingBuffer = false
-          }
-          
-          // Schedule buffer
-          if currentFrame >= parser.frames.count {
-            scheduleBuffer(outputBuffer, at: nil, options: options, completionCallbackType: .dataPlayedBack) { _ in
-              self.pause()
-            }
-          } else {
-            scheduleBuffer(outputBuffer, at: nil, options: options)
-          }
-          
-          scheduledTime += Double(decodedBlock.buffer.frameLength) / Constants.SAMPLE_RATE
-        }
-        return true
-      }
+    // Check for final frame
+    if currentFrame >= parser.frames.count {
+      // EOF
+      return false
     }
-    return didSchedule
+    
+    // log.debug("scheduling frame \(self.currentFrame)")
+    
+    if self.decoder.isReadyToDecode() {
+      
+      // Decode next frame
+      if !self.decoder.decode(parser.frames[currentFrame], timestamp: 0) {
+        throw AudioPlayerDAAError.failedToDecode
+      }
+      currentFrame += 1
+      
+      // Track latency
+      daaLatencyInSamples = Int(self.decoder.latencyInSamples)
+    }
+    
+    guard let decodedBlock = self.decoder.nextBlock()
+    else {
+      throw AudioPlayerDAAError.failedToDecode
+    }
+    
+    assert(decodedBlock.buffer.frameCapacity == Int(Constants.AC4_SAMPLES_PER_BLOCK))
+    
+    // At start-up, the decoder may output empty or partial (i.e. < 256 samples) blocks
+    // After start-up, the decoder will regularly output 256 samples per call
+    if decodedBlock.buffer.frameLength > 0 {
+      
+      // Convert buffer format
+      guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat,
+                                                frameCapacity: decodedBlock.buffer.frameLength),
+            let converter = AVAudioConverter(from: decodedBlock.buffer.format, to: outputFormat)
+      else { throw AudioPlayerDAAError.failedToCreatePCMBuffer }
+      
+      try converter.convert(to: outputBuffer, from: decodedBlock.buffer)
+      
+      // If interrupting, the next buffer should overwrite un-rendered audio in AVAudioEngine's output buffer
+      var options: AVAudioPlayerNodeBufferOptions = []
+      if interruptPlayingBuffer {
+        options.insert(.interrupts)
+        interruptPlayingBuffer = false
+      }
+      
+      // Schedule buffer
+      if currentFrame >= parser.frames.count {
+        scheduleBuffer(outputBuffer, at: nil, options: options, completionCallbackType: .dataPlayedBack) { _ in
+          self.pause()
+        }
+      } else {
+        scheduleBuffer(outputBuffer, at: nil, options: options)
+      }
+      
+      scheduledTime += Double(decodedBlock.buffer.frameLength) / Constants.SAMPLE_RATE
+    }
+    return true
   }
   
   // MARK: Trick play
