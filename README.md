@@ -453,5 +453,10 @@ func setEndpoint(endp: Endpoint) {
 
 # Version History
 
-## Version 1.0
+## Version 1.0.0
 * The initial release of DAAPlay targeting DAA v3.5.7 and playback of AC-4 IMS
+
+## Version 1.0.1
+* Refers users to `dlb_mp4demux` on Github
+* Outputs PCM as float, and signals as "binaural" to iOS
+* Mitigates audio dropouts when UI animations occur by correctly prioritizing audio events with Grand Central Dispatch
