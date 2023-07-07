@@ -29,6 +29,8 @@ struct ExpertView: View {
     ScrollView {
       VStack(alignment: .leading) {
         
+        versionView
+        Divider().padding(.vertical, 10)
         daaView
         Divider().padding(.vertical, 10)
         avAudioSessionOutputView
@@ -37,6 +39,21 @@ struct ExpertView: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, 15)
+    }
+    .background(ColorScheme.background)
+    .foregroundColor(ColorScheme.foreground)
+  }
+  
+  private var versionView: some View {
+    VStack(alignment: .leading) {
+      sectionHeader(name: "DAAPlay")
+      if let bundleName = Bundle.main.bundleName {
+        keyValuePair(key: "Bundle Name", value: bundleName)
+      }
+      if let version = Bundle.main.bundleShortVersionString {
+        keyValuePair(key: "Version", value: version)
+      }
+      keyValuePair(key: "Build date", value: viewModel.buildDate)
     }
   }
   
@@ -48,10 +65,10 @@ struct ExpertView: View {
       keyValuePair(key: "Core Decoder Version", value: viewModel.daa.coreDecoderVersion)
       keyValuePair(key: "DAA Latency",
                    value: String(format: "%dms (%d samples)",
-                   Int(1000.0 * Double(viewModel.daa.daaLatencyInSamples) / Constants.SAMPLE_RATE),
+                                 Int(1000.0 * Double(viewModel.daa.daaLatencyInSamples) / Constants.SAMPLE_RATE),
                                  viewModel.daa.daaLatencyInSamples))
       keyValuePair(key: "Target Endpoint",
-                   value: viewModel.audioDeviceManager.headphonesConnected ?
+                   value: viewModel.audioSystemManager.headphonesConnected ?
                    "Stereo headphones" : "Stereo speakers")
       statusIndicator(key: "Virtualizer", value: viewModel.daa.isVirtualized)
     }
@@ -60,33 +77,33 @@ struct ExpertView: View {
   private var avAudioSessionOutputView: some View {
     VStack(alignment: .leading) {
       sectionHeader(name: "AVAudioSession API")
-      keyValuePair(key: "Output Name", value: viewModel.audioDeviceManager.outputName)
-      keyValuePair(key: "Output Type", value: outputTypeLabel(for: viewModel.audioDeviceManager.outputType))
-      statusIndicator(key: "Headphones connected", value: viewModel.audioDeviceManager.headphonesConnected)
-      statusIndicator(key: "Spatial audio enabled", value: viewModel.audioDeviceManager.isSpatialAudioEnabled)
+      keyValuePair(key: "Output Name", value: viewModel.audioSystemManager.outputName)
+      keyValuePair(key: "Output Type", value: outputTypeLabel(for: viewModel.audioSystemManager.outputType))
+      statusIndicator(key: "Headphones connected", value: viewModel.audioSystemManager.headphonesConnected)
+      statusIndicator(key: "Spatial audio enabled", value: viewModel.audioSystemManager.isSpatialAudioEnabled)
     }
   }
   
   func sectionHeader(name: String) -> some View {
-    Text(name).font(.title).fontWeight(.heavy).padding(.bottom, 15)
+    Text(name).font(.title).fontWeight(.light).padding(.bottom, 15)
   }
   
   func keyValuePair(key: String, value: String) -> some View {
     VStack(alignment: .leading) {
-      Text(key).font(.caption2).foregroundColor(.secondary)
+      Text(key).font(.caption2).foregroundColor(ColorScheme.foregroundDisabled)
       Text(value)
         .font(.body)
-        .foregroundColor(.primary)
+        .foregroundColor(ColorScheme.foreground)
         .padding(.bottom, 7)
     }
   }
   
   func keyValuePair(key: String, value: Double) -> some View {
     VStack(alignment: .leading) {
-      Text(key).font(.caption2).foregroundColor(.secondary)
+      Text(key).font(.caption2).foregroundColor(ColorScheme.foregroundDisabled)
       Text(String(format: "%.2f", value))
         .font(.system(.body, design: .monospaced))
-        .foregroundColor(.primary)
+        .foregroundColor(ColorScheme.foreground)
         .padding(.bottom, 7)
     }
   }
@@ -95,7 +112,7 @@ struct ExpertView: View {
     HStack {
       let color: Color = value ? .green : .red
       Circle().fill(color).frame(width: 15, height: 15).offset(y: -3)
-      Text(key).font(.body).foregroundColor(.primary).padding(.bottom, 7)
+      Text(key).font(.body).foregroundColor(ColorScheme.foreground).padding(.bottom, 7)
     }
   }
   

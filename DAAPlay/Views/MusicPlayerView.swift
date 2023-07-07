@@ -24,6 +24,7 @@ import SwiftUI
 
 struct MusicPlayerView: View {
   @StateObject var viewModel = MusicPlayerViewModel()
+  
   @Environment(\.dismiss) private var dismiss
   
   var title: String
@@ -34,6 +35,21 @@ struct MusicPlayerView: View {
   var body: some View {
     VStack {
       ZStack {
+        ZStack {
+          Rectangle()
+            .fill(.black)
+            .aspectRatio(nil, contentMode: .fit)
+          
+          Image(systemName: "music.quarternote.3")
+            .resizable()
+            .aspectRatio(nil, contentMode: .fit)
+            .padding()
+            .frame(maxWidth: 240, maxHeight: 240)
+            .foregroundColor(ColorScheme.foreground)
+        }
+        .padding()
+        .frame(maxWidth: 340, maxHeight: 340)
+        
         if !viewModel.isPlayerReady {
           ProgressView()
             .progressViewStyle(CircularProgressViewStyle())
@@ -42,19 +58,9 @@ struct MusicPlayerView: View {
         }
       }
       
-      Text(viewModel.elapsedTimeText)
-        .font(.system(size: 64, weight: .bold))
+      TitleAndArtist(title: title, artist: artist)
       
-      HStack {
-        Button {
-          viewModel.togglePlayPause()
-        } label: {
-          Image(systemName: viewModel.state == .playing ? "pause.fill" : "play.fill")
-        }
-        .foregroundColor(.primary)
-        .font(.system(size: 45))
-        .padding(.trailing, 20)
-        
+      HStack(spacing: 0) {
         Slider(value: $viewModel.playerProgress,
                in: 0...viewModel.player.duration,
                onEditingChanged: { scrubStarted in
@@ -64,19 +70,54 @@ struct MusicPlayerView: View {
             viewModel.scrubState = .scrubEnded(viewModel.playerProgress)
           }
         })
-        .accentColor(.pink)
-        .padding(.bottom, 8)
+        .accentColor(ColorScheme.progressAccent)
       }
-      .padding(.horizontal, 15)
+      .padding(.horizontal, 20)
       
-      Text(title)
-        .font(.headline)
-      Text(artist)
-        .font(.subheadline)
-            
+      HStack(spacing: 0) {
+        Text(viewModel.elapsedTimeText)
+          .font(.caption2)
+          .foregroundColor(ColorScheme.foreground)
+        
+        Spacer()
+        Text(viewModel.remainingTimeText)
+          .font(.caption2)
+          .foregroundColor(ColorScheme.foreground)
+      }
+      .padding(.horizontal, 20)
+      .baselineOffset(20)
+      
+      HStack {
+        Button {
+          viewModel.togglePlayPause()
+        } label: {
+          ZStack {
+            Image(systemName: viewModel.state == .playing ? "pause.fill" : "play.fill")
+          }
+        }
+        .foregroundColor(ColorScheme.foreground)
+        .font(.system(size: 45, weight: .thin))
+        .padding(.trailing, 16)
+        
+        Button {
+          viewModel.seek(by: -10)
+        } label: {
+          Image(systemName: "gobackward.10")
+        }
+        .font(.system(size: 32, weight: .thin))
+        .padding(.trailing, 16)
+        .foregroundColor(ColorScheme.foreground)
+      }
+      
+      Spacer()
+      
+      Text(badge)
+        .font(.body)
+        .fontWeight(Font.Weight.thin)
+        .foregroundColor(ColorScheme.actionButton)
     }
     .onAppear {
-      viewModel.setup(audioURL: audioURL)
+      viewModel.setup(audioURL: audioURL, title: title, artist: artist)
     }
     .onDisappear {
       viewModel.teardown()
@@ -86,8 +127,9 @@ struct MusicPlayerView: View {
         dismiss()
       }
     }
+    .background(ColorScheme.backgroundGradient)
+    .accentColor(ColorScheme.foreground)
     .navigationBarBackButtonHidden(true)
-    .navigationTitle(badge)
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .navigationBarLeading) {
@@ -96,24 +138,25 @@ struct MusicPlayerView: View {
         } label: {
           HStack {
             Image(systemName: "chevron.backward")
-            Text("Back")
+            //Text("Back")
+            Text("    ")
           }
         }
       }
     }
     .toolbar {
-      if viewModel.audioDeviceManager.headphonesConnected {
+      if viewModel.audioSystemManager.headphonesConnected {
         ToolbarItem(placement: .navigationBarTrailing) {
           Image(systemName: headphoneIcon)
-            .foregroundColor(.primary)
-            .font(.system(size: 16, weight: .semibold))
+              .foregroundColor(ColorScheme.actionButton)
+              .font(.system(size: 20, weight: .semibold))
         }
       }
     }
   }
   
   private var headphoneIcon: String {
-    let outputDeviceName = viewModel.audioDeviceManager.outputName.filter { !$0.isWhitespace }
+    let outputDeviceName = viewModel.audioSystemManager.outputName.filter { !$0.isWhitespace }
     switch outputDeviceName.lowercased() {
     case "airpodsmax": return "airpodsmax"
     case "airpodspro": return "airpodspro"
@@ -121,5 +164,4 @@ struct MusicPlayerView: View {
     default: return "headphones"
     }
   }
-  
 }

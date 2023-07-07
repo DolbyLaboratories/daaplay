@@ -21,22 +21,47 @@
 /// OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import Foundation
+import MediaPlayer
 
-struct Constants {
-  static let NUM_CHANNELS: Int = 2
-  static let SAMPLE_RATE: Double = 48000.0
+class NowPlaying {
   
-  static let FIVE_MILLISECONDS: Double = 0.005
-  static let ONE_HUNDRED_MILLISECONDS: Double = 0.1
-  static let TWO_HUNDRED_AND_FIFTY_MILLISECONDS: Double = 0.25
+  static func start(title: String, artist: String?, index: Int, count: Int) {
+    
+    let npic = MPNowPlayingInfoCenter.default()
+    var np = [String: Any]()
+      
+    np = npic.nowPlayingInfo ?? [String: Any]()
+    
+    np[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
+    np[MPNowPlayingInfoPropertyIsLiveStream] = false
+    np[MPMediaItemPropertyTitle] = title
+    if let artist = artist {
+      np[MPMediaItemPropertyArtist] = artist
+    }
+    np[MPNowPlayingInfoPropertyPlaybackQueueIndex] = index
+    np[MPNowPlayingInfoPropertyPlaybackQueueCount] = count
+    np[MPMediaItemPropertyPlaybackDuration] = nil
+    np[MPNowPlayingInfoPropertyElapsedPlaybackTime] = nil
+    np[MPNowPlayingInfoPropertyPlaybackRate] = nil
+    np[MPNowPlayingInfoPropertyDefaultPlaybackRate] = nil
+    
+    npic.nowPlayingInfo = np
+  }
   
-  static let ONE_TWENTY_EIGHT_AUDIO_SAMPLES: Double = 128.0 / SAMPLE_RATE
-  static let TWO_FIFTY_SIX_AUDIO_SAMPLES: Double = 256.0 / SAMPLE_RATE
-  static let FIVE_TWELVE_AUDIO_SAMPLES: Double = 512.0 / SAMPLE_RATE
+  static func update(playing: Bool, rate: Float, position: Double, duration: Double) {
+    
+    let npic = MPNowPlayingInfoCenter.default()
+    var np = npic.nowPlayingInfo ?? [String: Any]()
+    
+    np[MPMediaItemPropertyPlaybackDuration] = Float(duration)
+    np[MPNowPlayingInfoPropertyElapsedPlaybackTime] = Float(position)
+    np[MPNowPlayingInfoPropertyPlaybackRate] = rate
+    np[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
+    
+    npic.nowPlayingInfo = np
+  }
   
-  static let AC4_SAMPLES_PER_BLOCK: Double = 256
-  static let AC4_SAMPLES_PER_FRAME: Double = 2048
-  static let AC4_SECONDS_PER_BLOCK: Double = AC4_SAMPLES_PER_BLOCK / SAMPLE_RATE
-  static let AC4_SECONDS_PER_FRAME: Double = AC4_SAMPLES_PER_FRAME / SAMPLE_RATE
-  static let DAA_AUDIO_BUFFER_SECONDS: Double = AC4_SECONDS_PER_BLOCK
+  static func stop() {
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = [String: Any]()
+  }
 }

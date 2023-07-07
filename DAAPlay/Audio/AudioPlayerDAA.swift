@@ -62,7 +62,7 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
   
   private var interruptPlayingBuffer: Bool = false
   
-  private let outputFormat = AVAudioFormat(
+  private let binauralFormat = AVAudioFormat(
     standardFormatWithSampleRate: Constants.SAMPLE_RATE,
     channelLayout: AVAudioChannelLayout(
       layoutTag: kAudioChannelLayoutTag_Binaural)!
@@ -115,7 +115,7 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
       timer.resume()
       schedulingTimer = timer
 
-      return outputFormat
+      return binauralFormat
       
     } catch {
       log.error("Error reading the audio file: \(error.localizedDescription)")
@@ -283,9 +283,9 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
     if decodedBlock.buffer.frameLength > 0 {
       
       // Convert buffer format
-      guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat,
+      guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: binauralFormat,
                                                 frameCapacity: decodedBlock.buffer.frameLength),
-            let converter = AVAudioConverter(from: decodedBlock.buffer.format, to: outputFormat)
+            let converter = AVAudioConverter(from: decodedBlock.buffer.format, to: binauralFormat)
       else { throw AudioPlayerDAAError.failedToCreatePCMBuffer }
       
       try converter.convert(to: outputBuffer, from: decodedBlock.buffer)

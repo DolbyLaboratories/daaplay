@@ -21,22 +21,22 @@
 /// OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import Foundation
+import SwiftUI
 
-struct Constants {
-  static let NUM_CHANNELS: Int = 2
-  static let SAMPLE_RATE: Double = 48000.0
+struct TitleAndArtist: View {
+  var title: String
+  var artist: String?
   
-  static let FIVE_MILLISECONDS: Double = 0.005
-  static let ONE_HUNDRED_MILLISECONDS: Double = 0.1
-  static let TWO_HUNDRED_AND_FIFTY_MILLISECONDS: Double = 0.25
-  
-  static let ONE_TWENTY_EIGHT_AUDIO_SAMPLES: Double = 128.0 / SAMPLE_RATE
-  static let TWO_FIFTY_SIX_AUDIO_SAMPLES: Double = 256.0 / SAMPLE_RATE
-  static let FIVE_TWELVE_AUDIO_SAMPLES: Double = 512.0 / SAMPLE_RATE
-  
-  static let AC4_SAMPLES_PER_BLOCK: Double = 256
-  static let AC4_SAMPLES_PER_FRAME: Double = 2048
-  static let AC4_SECONDS_PER_BLOCK: Double = AC4_SAMPLES_PER_BLOCK / SAMPLE_RATE
-  static let AC4_SECONDS_PER_FRAME: Double = AC4_SAMPLES_PER_FRAME / SAMPLE_RATE
-  static let DAA_AUDIO_BUFFER_SECONDS: Double = AC4_SECONDS_PER_BLOCK
+  var body: some View {
+    Text(title)
+      .font(.body)
+      .fontWeight(Font.Weight.medium)
+      .foregroundColor(ColorScheme.foreground)
+    if let artist = artist {
+      Text(artist)
+        .font(.body)
+        .fontWeight(Font.Weight.thin)
+        .foregroundColor(ColorScheme.foreground)
+    }
+  }
 }

@@ -33,7 +33,19 @@ class ExpertViewModel: NSObject, ObservableObject {
   }
   
   public var daa = AudioPlayerDAA()
-  public var audioDeviceManager = AudioDeviceManager.shared
+  public var audioSystemManager = AudioSystemManager.shared
+  public var buildDate: String {
+    let dateFormatter = DateFormatter()
+    dateFormatter.dateFormat = "dd MMM YYYY"
+    
+    let bundleName = Bundle.main.infoDictionary!["CFBundleName"] as? String ?? "Info.plist"
+    if let infoPath = Bundle.main.path(forResource: bundleName, ofType: nil),
+       let infoAttr = try? FileManager.default.attributesOfItem(atPath: infoPath),
+       let infoDate = infoAttr[FileAttributeKey.creationDate] as? Date {
+      return dateFormatter.string(from: infoDate)
+    }
+    return dateFormatter.string(from: Date())
+  }
   
 }
   

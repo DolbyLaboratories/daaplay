@@ -29,10 +29,10 @@ class MainMenuViewModel: NSObject, ObservableObject {
   }
   
   // MARK: Public properties
-  public var content: Content?
+  public var content: AppContent?
   
   // MARK: Private properties
-  private var contentParser = ContentParser()
+  private var contentParser = AppContentParser()
   
   override init() {
     super.init()

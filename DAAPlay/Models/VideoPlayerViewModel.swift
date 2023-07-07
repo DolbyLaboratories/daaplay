@@ -24,7 +24,7 @@ import Foundation
 import SwiftUI
 import Combine
 
-class VideoPlayerViewModel: NSObject, ObservableObject {
+class VideoPlayerViewModel: NSObject, RCExecutor, ObservableObject {
   static let logger = Logger(.viewModel)
   var log: Logger {
     VideoPlayerViewModel.logger
@@ -32,10 +32,11 @@ class VideoPlayerViewModel: NSObject, ObservableObject {
   
   // MARK: Public properties
   
-  @Published var audioDeviceManager = AudioDeviceManager.shared
+  @Published var audioSystemManager = AudioSystemManager.shared
   @Published var isAudioPlayerReady = false
   @Published var playerProgress: Double = .zero
   @Published var elapsedTimeText: String = "00:00"
+  @Published var remainingTimeText: String = "00:00"
   @Published var state: PlayerState = .stopped
   var dismissPublisher = PassthroughSubject<Bool, Never>()
   
@@ -47,12 +48,7 @@ class VideoPlayerViewModel: NSObject, ObservableObject {
       case .scrubbing:
         return
       case .scrubEnded(let seekTime):
-        let newTime = audioPlayer.seek(time: seekTime)
-        seekVideo(to: newTime) { _ in
-          if self.state == .playing {
-            self.videoPlayer?.play()
-          }
-        }
+        self.seek(to: seekTime)
         scrubState = .reset
       }
     }
@@ -75,15 +71,18 @@ class VideoPlayerViewModel: NSObject, ObservableObject {
   
   // MARK: - Public
   
-  func setup(videoURL: URL, audioURL: URL) {
+  func setup(videoURL: URL, audioURL: URL, title: String, artist: String?) {
     setupVideo(url: videoURL)
     setupAudio(url: audioURL)
+    audioSystemManager.activate()
     displayUpdateTimer = Timer.scheduledTimer(
       timeInterval: Constants.TWO_HUNDRED_AND_FIFTY_MILLISECONDS,
       target: self,
       selector: #selector(updateDisplay),
       userInfo: nil,
       repeats: true)
+    NowPlaying.start(title: title, artist: artist, index: 0, count: 1)
+    RemoteCommand.start(using: self)
   }
   
   // MARK: - Teardown
@@ -101,6 +100,9 @@ class VideoPlayerViewModel: NSObject, ObservableObject {
     displayUpdateTimer = nil
     audioPlayer = AudioPlayerDAA()
     videoPlayer = nil
+    audioSystemManager.deactivate()
+    NowPlaying.stop()
+    RemoteCommand.stop()
   }
   
   deinit {
@@ -112,6 +114,7 @@ class VideoPlayerViewModel: NSObject, ObservableObject {
   private func setupVideo(url: URL) {
     videoPlayer = AVPlayer(url: url)
     videoPlayer?.isMuted = true
+    videoPlayer?.currentItem?.allowedAudioSpatializationFormats = AVAudioSpatializationFormats(rawValue: 0)
   }
   
   // MARK: - Setup audio
@@ -124,7 +127,7 @@ class VideoPlayerViewModel: NSObject, ObservableObject {
       guard let avf = format else {
         return
       }
-      audioPlayer.setEndpoint(endp: audioDeviceManager.headphonesConnected ? .headphones : .speakers)
+      audioPlayer.setEndpoint(endp: audioSystemManager.headphonesConnected ? .headphones : .speakers)
       configureEngine(with: avf)
       
     } catch {
@@ -142,7 +145,7 @@ class VideoPlayerViewModel: NSObject, ObservableObject {
   
   private func configureEngine(with format: AVAudioFormat) {
     // Respond to headphone connect/disconnects
-    audioDeviceManager
+    audioSystemManager
       .$headphonesConnected
       .sink(receiveValue: { headphonesConnected in
         self.pauseAndRealignVideoToAudio()
@@ -167,8 +170,15 @@ class VideoPlayerViewModel: NSObject, ObservableObject {
       })
       .store(in: &cancellables)
     
+    // "format" is the (binaural) AVAudioFormat produced by AudioPlayerDAA
+    
+    // Most AVAudioEngine-based apps rely upon the engine to automatically connect the engine's
+    // internal "mainMixer" and "output" nodes. However, this app makes the connection explicit
+    // as it ensures audio sent to the output node is tagged as binaural. This step is crucial
+    // for managing on-device virtualization.
     engine.attach(audioPlayer)
     engine.connect(audioPlayer, to: engine.mainMixerNode, format: format)
+    engine.connect(engine.mainMixerNode, to: engine.outputNode, format: format)
     engine.prepare()
     
     // Minimize latency due to OS's IO buffer
@@ -228,16 +238,27 @@ class VideoPlayerViewModel: NSObject, ObservableObject {
     }
   }
   
-  func skip(forwards: Bool) {
-    let newTime = audioPlayer.seek(offset: forwards ? 10.0 : -10.0)
-    DispatchQueue.main.asyncAfter(deadline: .now() + self.audioOutputLatency) {
-      self.videoPlayer?.pause()
-      self.seekVideo(to: newTime) { _ in
-        if self.state == .playing {
-          DispatchQueue.main.asyncAfter(deadline: .now() + self.audioOutputLatency) {
-            self.videoPlayer?.play()
-          }
-        }
+  func seek(by: Double) {
+    let wasPlaying = self.state == .playing
+    let newTime = audioPlayer.seek(offset: by)
+    self.audioPlayer.pause()
+    self.videoPlayer?.pause()
+    self.seekVideo(to: newTime) { _ in
+      if wasPlaying {
+        self.play()
+      }
+    }
+    updateDisplay()
+  }
+  
+  func seek(to seekTime: Double) {
+    let wasPlaying = self.state == .playing
+    let newTime = audioPlayer.seek(time: seekTime)
+    self.audioPlayer.pause()
+    self.videoPlayer?.pause()
+    self.seekVideo(to: newTime) { _ in
+      if wasPlaying {
+        self.play()
       }
     }
     updateDisplay()
@@ -262,7 +283,20 @@ class VideoPlayerViewModel: NSObject, ObservableObject {
     }
   }
   
-  // MARK: Display updates
+  // MARK: - Remote commands
+  
+  func executeRemote(command: Command) {
+    switch command {
+    case .pause: pause()
+    case .play: play()
+    case .togglePlayPause: playOrPause()
+    case .skipForward(let offset): seek(by: offset)
+    case .skipBackward(let offset): seek(by: -offset)
+    case .changePlaybackPosition(let position): seek(to: position)
+    }
+  }
+  
+  // MARK: - Display updates
   
   @objc private func updateDisplay() {
     var currentTime: TimeInterval = 0
@@ -278,12 +312,22 @@ class VideoPlayerViewModel: NSObject, ObservableObject {
     case .reset:
       playerProgress = audioPlayer.progress
       elapsedTimeText = formatMinutesSeconds(time: currentTime)
+      remainingTimeText = formatMinutesSeconds(time: ceil(audioPlayer.duration - currentTime))
     case .scrubbing:
       elapsedTimeText = formatMinutesSeconds(time: playerProgress)
+      remainingTimeText = formatMinutesSeconds(time: ceil(audioPlayer.duration - playerProgress))
     case .scrubEnded(let seekTime):
       scrubState = .reset
       playerProgress = seekTime
       elapsedTimeText = formatMinutesSeconds(time: playerProgress)
+      remainingTimeText = formatMinutesSeconds(time: ceil(audioPlayer.duration - playerProgress))
     }
+    
+    NowPlaying.update(
+      playing: state == .playing,
+      rate: state == .playing ? 1.0 : 0.0,
+      position: audioPlayer.progress,
+      duration: audioPlayer.duration
+    )
   }
 }

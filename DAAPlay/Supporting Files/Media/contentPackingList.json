@@ -13,6 +13,7 @@
     {
       "id": 1,
       "title": "Channel Check",
+      "artist": "Dolby",
       "duration": 36,
       "badge": "AC-4 IMS @ 320kbps",
       "video": "ChannelCheck.mp4",

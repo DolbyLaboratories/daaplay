@@ -25,7 +25,7 @@ class AudioPlayerDAA
 class DAADecoder <<wrapper>>
 class libdaa <<DAA>> #pink
 
-class AudioDeviceManager <<singleton>>
+class AudioSystemManager <<singleton>>
 
 
 DAAPlayMain *-- MainMenuView
@@ -52,8 +52,8 @@ VideoPlayerViewModel -- AVAudioEngine : invokes
 MusicPlayerViewModel -- AVAudioEngine : invokes
 AVAudioPlayerNode .. AVAudioEngine
 
-AudioDeviceManager -- AVAudioSession : invokes
+AudioSystemManager -- AVAudioSession : invokes
 
-AudioPlayerDAA -- AudioDeviceManager
+AudioPlayerDAA -- AudioSystemManager
 
 @enduml

@@ -22,21 +22,32 @@
 
 import Foundation
 
-struct Constants {
-  static let NUM_CHANNELS: Int = 2
-  static let SAMPLE_RATE: Double = 48000.0
+struct AppContent: Decodable {
+  var music: [Music]?
+  var video: [Video]?
   
-  static let FIVE_MILLISECONDS: Double = 0.005
-  static let ONE_HUNDRED_MILLISECONDS: Double = 0.1
-  static let TWO_HUNDRED_AND_FIFTY_MILLISECONDS: Double = 0.25
+  struct Music: Decodable, Identifiable {
+    let id: Int
+    let title: String
+    let artist: String
+    let duration: Int
+    let badge: String
+    
+    let audio: String
+    var audioURL: URL?
+  }
   
-  static let ONE_TWENTY_EIGHT_AUDIO_SAMPLES: Double = 128.0 / SAMPLE_RATE
-  static let TWO_FIFTY_SIX_AUDIO_SAMPLES: Double = 256.0 / SAMPLE_RATE
-  static let FIVE_TWELVE_AUDIO_SAMPLES: Double = 512.0 / SAMPLE_RATE
-  
-  static let AC4_SAMPLES_PER_BLOCK: Double = 256
-  static let AC4_SAMPLES_PER_FRAME: Double = 2048
-  static let AC4_SECONDS_PER_BLOCK: Double = AC4_SAMPLES_PER_BLOCK / SAMPLE_RATE
-  static let AC4_SECONDS_PER_FRAME: Double = AC4_SAMPLES_PER_FRAME / SAMPLE_RATE
-  static let DAA_AUDIO_BUFFER_SECONDS: Double = AC4_SECONDS_PER_BLOCK
+  struct Video: Decodable, Identifiable {
+    let id: Int
+    let title: String
+    let artist: String?
+    let duration: Int
+    let badge: String
+    
+    let video: String
+    var videoURL: URL?
+    
+    let audio: String
+    var audioURL: URL?
+  }
 }

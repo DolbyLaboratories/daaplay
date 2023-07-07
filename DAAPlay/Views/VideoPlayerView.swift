@@ -28,20 +28,27 @@ import AVKit
 
 struct VideoPlayerView: View {
   @StateObject var viewModel = VideoPlayerViewModel()
+  @State private var isFullScreenVideo = false
+  @State private var orientation = UIDeviceOrientation.unknown
+  
   @Environment(\.dismiss) private var dismiss
-
+  
   var title: String
+  var artist: String?
   var badge: String
   var videoURL: URL
   var audioURL: URL
   
   var body: some View {
     VStack {
+      
       ZStack {
         VideoPlayer(
           player: viewModel.videoPlayer
         )
         .disabled(true)
+        .padding(0)
+        .frame(maxHeight: 300)
         
         if !(viewModel.isAudioPlayerReady && (viewModel.videoPlayer?.status == .readyToPlay)) {
           ProgressView()
@@ -51,18 +58,9 @@ struct VideoPlayerView: View {
         }
       }
       
-      HStack {
-        Button {
-          viewModel.playOrPause()
-        } label: {
-          ZStack {
-            Image(systemName: viewModel.state == .playing ? "pause.fill" : "play.fill")
-          }
-        }
-        .foregroundColor(.primary)
-        .font(.system(size: 45))
-        .padding(.trailing, 20)
-        
+      TitleAndArtist(title: title, artist: artist)
+      
+      HStack(spacing: 0) {
         Slider(value: $viewModel.playerProgress,
                in: 0...viewModel.audioPlayer.duration,
                onEditingChanged: { scrubStarted in
@@ -72,28 +70,70 @@ struct VideoPlayerView: View {
             viewModel.scrubState = .scrubEnded(viewModel.playerProgress)
           }
         })
-        .accentColor(.pink)
-        .padding(.bottom, 8)
+        .accentColor(ColorScheme.progressAccent)
       }
-      .padding(.horizontal, 15)
+      .padding(.horizontal, 20)
       
-      Text(title)
-        .font(.headline)
+      HStack(spacing: 0) {
+        Text(viewModel.elapsedTimeText)
+          .font(.caption2)
+          .foregroundColor(ColorScheme.foreground)
+        
+        Spacer()
+        Text(viewModel.remainingTimeText)
+          .font(.caption2)
+          .foregroundColor(ColorScheme.foreground)
+      }
+      .padding(.horizontal, 20)
+      .baselineOffset(20)
+      
+      HStack {
+        Button {
+          viewModel.playOrPause()
+        } label: {
+          ZStack {
+            Image(systemName: viewModel.state == .playing ? "pause.fill" : "play.fill")
+          }
+        }
+        .foregroundColor(ColorScheme.foreground)
+        .font(.system(size: 45, weight: .thin))
+        .padding(.trailing, 16)
+        
+        Button {
+          viewModel.seek(by: -10)
+        } label: {
+          Image(systemName: "gobackward.10")
+        }
+        .font(.system(size: 32, weight: .thin))
+        .padding(.trailing, 16)
+        .foregroundColor(ColorScheme.foreground)
+      }
+      
+      Spacer()
+      
+      Text(badge)
+        .font(.body)
+        .fontWeight(Font.Weight.thin)
+        .foregroundColor(ColorScheme.actionButton)
       
     }
+    .fullScreenCover(isPresented: $isFullScreenVideo, content: FullScreenVideoView.init)
+    .environmentObject(viewModel)
     .onAppear {
-      viewModel.setup(videoURL: videoURL, audioURL: audioURL)
+      viewModel.setup(videoURL: videoURL, audioURL: audioURL, title: title, artist: artist)
     }
     .onDisappear {
       viewModel.teardown()
     }
     .onReceive(viewModel.dismissPublisher) { shouldDismiss in
       if shouldDismiss {
+        isFullScreenVideo = false
         dismiss()
       }
     }
+    .background(ColorScheme.backgroundGradient)
+    .accentColor(ColorScheme.foreground)
     .navigationBarBackButtonHidden(true)
-    .navigationTitle(badge)
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .navigationBarLeading) {
@@ -102,24 +142,32 @@ struct VideoPlayerView: View {
         } label: {
           HStack {
             Image(systemName: "chevron.backward")
-            Text("Back")
+            //Text("Back")
+            Text("    ")
           }
         }
       }
     }
     .toolbar {
-      if viewModel.audioDeviceManager.headphonesConnected {
+      if viewModel.audioSystemManager.headphonesConnected {
         ToolbarItem(placement: .navigationBarTrailing) {
           Image(systemName: headphoneIcon)
-            .foregroundColor(.primary)
-            .font(.system(size: 16, weight: .semibold))
+              .foregroundColor(ColorScheme.actionButton)
+              .font(.system(size: 20, weight: .semibold))
         }
+      }
+    }
+    .onRotate { newOrientation in
+      if isFullScreenVideo == false && (newOrientation == .landscapeLeft || newOrientation == .landscapeRight) {
+        isFullScreenVideo = true
+      } else if isFullScreenVideo == true && (newOrientation == .portrait || newOrientation == .portraitUpsideDown) {
+        isFullScreenVideo = false
       }
     }
   }
   
   private var headphoneIcon: String {
-    let outputDeviceName = viewModel.audioDeviceManager.outputName.filter { !$0.isWhitespace }
+    let outputDeviceName = viewModel.audioSystemManager.outputName.filter { !$0.isWhitespace }
     switch outputDeviceName.lowercased() {
     case "airpodsmax": return "airpodsmax"
     case "airpodspro": return "airpodspro"
@@ -127,5 +175,4 @@ struct VideoPlayerView: View {
     default: return "headphones"
     }
   }
-  
 }

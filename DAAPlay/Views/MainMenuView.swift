@@ -27,11 +27,27 @@ import SwiftUI
 struct MainMenuView: View {
   @StateObject var viewModel = MainMenuViewModel()
   
+  init() {
+    var titleFont = UIFont.preferredFont(forTextStyle: .body)
+    titleFont = UIFont(
+      descriptor: titleFont.fontDescriptor.withSymbolicTraits(.traitUIOptimized) ?? titleFont.fontDescriptor,
+      size: 45
+    )
+    let navAppearance = UINavigationBarAppearance()
+    navAppearance.configureWithOpaqueBackground()
+    navAppearance.backgroundColor = UIColor(ColorScheme.prussianBlue)
+    navAppearance.titleTextAttributes = [.foregroundColor: UIColor(ColorScheme.foreground)]
+    navAppearance.largeTitleTextAttributes = [.foregroundColor: UIColor(ColorScheme.foreground), .font: titleFont]
+    
+    UINavigationBar.appearance().standardAppearance = navAppearance
+    UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
+    
+  }
+  
   var body: some View {
     if let content = viewModel.content {
       NavigationView {
         List {
-          
           // Music
           if let music = content.music {
             musicSection(for: music)
@@ -42,6 +58,9 @@ struct MainMenuView: View {
             videoSection(for: video)
           }
         }
+        .listStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(ColorScheme.prussianBlue)
         .navigationTitle("DAAPlay")
         //.navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -54,11 +73,12 @@ struct MainMenuView: View {
           }
         }
       }
+      .accentColor(ColorScheme.foreground)
     }
   }
   
-  func musicSection(for music: [Content.Music]) -> some View {
-    Section(header: Text("Music")) {
+  func musicSection(for music: [AppContent.Music]) -> some View {
+    Section {
       ForEach(music) { content in
         NavigationLink {
           MusicPlayerView(
@@ -69,37 +89,52 @@ struct MainMenuView: View {
         } label: {
           contentLabel(title: content.title, artist: content.artist, duration: content.duration, badge: content.badge)
         }
+        .listRowBackground(ColorScheme.background)
       }
+    } header: {
+      Text("Music")
+        .textCase(nil)
+        .foregroundColor(ColorScheme.foreground)
+        .font(.system(size: 45))
     }
   }
   
-  func videoSection(for video: [Content.Video]) -> some View {
-    Section(header: Text("Video")) {
+  func videoSection(for video: [AppContent.Video]) -> some View {
+    Section {
       ForEach(video) { content in
         NavigationLink {
           VideoPlayerView(
             title: content.title,
+            artist: content.artist,
             badge: content.badge,
             videoURL: content.videoURL!,
             audioURL: content.audioURL!)
         } label: {
-          contentLabel(title: content.title, artist: nil, duration: content.duration, badge: content.badge)
+          contentLabel(title: content.title, artist: content.artist, duration: content.duration, badge: content.badge)
         }
+        .listRowBackground(ColorScheme.background)
       }
+    } header: {
+      Text("Video")
+        .textCase(nil)
+        .foregroundColor(ColorScheme.foreground)
+        .font(.system(size: 45))
     }
   }
   
-  func contentLabel(title: String, artist: String?, duration: Int, badge: String) -> some View {
+  func contentLabel(title: String, artist: String?, duration: Int, badge: String? = nil) -> some View {
     HStack {
       VStack(alignment: .leading) {
-        Text(title).font(.body).fontWeight(.heavy)
+        Text(title).font(.body).fontWeight(Font.Weight.medium).foregroundColor(ColorScheme.foreground)
         if let artist = artist {
-          Text(artist).font(.body)
+          Text(artist).font(.body).fontWeight(Font.Weight.thin).foregroundColor(ColorScheme.foreground)
         }
-        Text(badge).font(.caption).padding(.bottom, 3)
+        if let badge = badge {
+          Text(badge).font(.caption).fontWeight(.ultraLight).padding(.bottom, 3).foregroundColor(ColorScheme.foreground)
+        }
       }
       Spacer()
-      Text(formatMinutesSeconds(time: duration))
+      Text(formatMinutesSeconds(time: duration)).foregroundColor(ColorScheme.selectiveYellow)
     }
   }
   

@@ -6,7 +6,7 @@
 ![Swift](https://img.shields.io/badge/swift-F54A2A?style=for-the-badge&logo=swift&logoColor=white)
 ![Objective-C](https://img.shields.io/badge/OBJECTIVE--C-%233A95E3.svg?style=for-the-badge&logo=apple&logoColor=white)
 
-DAAPlay is an example iOS music/video player integration of Dolby Audio for Applications (DAA) v3.5.7.
+An example iOS music/video player integration of Dolby Audio for Applications (DAA) v3.5.7.
 
 **DAAPlay requires the DAA library and API, which are only available to licensees of DAA.** See [here](https://professional.dolby.com/licensing/) and [here](https://handbook.dolby.com/) for information on becoming a licensee.
 
@@ -14,9 +14,10 @@ DAAPlay is an example iOS music/video player integration of Dolby Audio for Appl
 [Features](#features) •
 [Architecture and Code Layout](#architecture-and-code-layout) •
 [Developer Guidance](#developer-guidance) •
+[FAQs and Known Issues](#faqs-and-known-issues) •
 [Version History](#version-history)
 
-![Screenshot](img/screenshot.jpg) 
+![Screenshot](img/screenshot1.jpg) ![Screenshot](img/screenshot2.jpg) ![Screenshot](img/screenshot3.jpg) 
 
 </div>
   
@@ -27,7 +28,13 @@ From the DAA v3.5.7 SDK:
 2. Copy `dlb_decode_api.h` to `DAAPlay/Audio/DAA/v3.5.7/include`
 3. Copy `dlb_buffer.h` to `DAAPlay/Audio/DAA/v3.5.7/include`
 
-Then open `DAAPlay.xcodeproj`, build, and run
+Then:
+1. Open `DAAPlay.xcodeproj`
+2. Select a Development Team from the XCode project settings
+3. Connect an iPhone
+4. Build and run on an iPhone target
+
+Encountered a problem? See the [FAQs and known issues](#faqs-and-known-issues).
 
 # Features
 
@@ -86,7 +93,7 @@ Additionally, source code for a Dolby MP4 demuxer is available on Github: [https
 
 ## Integrating DAA into iOS
 
-Apple offers developers several API options for implementing audio functionality, including `CoreAudio`, `AUGraph`, `AVAudioEngine`, `AVAudioPlayer`, and `AVPlayer`. Each option offers a different trade-off of flexibility, complexity, and abstraction.
+Apple offers developers several API options for implementing audio functionality, including `CoreAudio`, `AUGraph`, `AVSampleBufferAudioRenderer`, `AVAudioEngine`, `AVAudioPlayer`, and `AVPlayer`. Each option offers a different trade-off of flexibility, complexity, and abstraction.
 
 DAAPlay integrates DAA with the `AVAudioEngine` API. `AVAudioEngine` is the API with the highest level of abstraction that still has the flexibility needed to integrate DAA.
 
@@ -106,6 +113,9 @@ engine.connect(player, to: engine.mainMixerNode, format: format)
 ...
 try engine.start()
 ```
+
+**Note:** `AVSampleBufferAudioRenderer` is an alternate option to `AVAudioEngine`. The [FAQs](#faqs-and-known-issues) include guidance on integrating DAA with `AVSampleBufferAudioRenderer`.
+
 
 ## Minimizing Output Latency
 DAAPlay implements "just-in-time" decoding, operating off a ~5ms timer (256 audio samples @48kHz). This mechanism limits the buffering (i.e. latency) between DAA's output and AVAudioEngine's output mixer to `DAA_AUDIO_BUFFER_SECONDS`.
@@ -355,6 +365,72 @@ func scheduleNextAudio() throws {
 }
 ```
 
+## Managing On-Device Virtualization
+**It is incorrect to apply virtualization twice.** When decoding, DAA will produced a virtualized output and therefore iOS's native virtualization (i.e. "Spatial Audio") should be disabled.
+
+A complication is that iOS does not provide APIs to directly control the native virtualization when using `AVAudioEngine`. Instead, one must signal to iOS that PCM produced by DAA is binaural. This is a two-step process.
+
+Firstly, PCM buffers (`AVAudioPCMBuffer`) produced by DAA must be tagged with `kAudioChannelLayoutTag_Binaural`.
+
+```swift
+// AudioPlayerDAA.swift
+private let binauralFormat = AVAudioFormat(
+standardFormatWithSampleRate: Constants.SAMPLE_RATE,
+channelLayout: AVAudioChannelLayout(
+  layoutTag: kAudioChannelLayoutTag_Binaural)!
+)
+
+...
+
+private func scheduleNextAudio() throws -> Bool {
+  ...
+  // Convert buffer format
+  guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: binauralFormat,
+                                            frameCapacity: decodedBlock.buffer.frameLength),
+        let converter = AVAudioConverter(from: decodedBlock.buffer.format, to: binauralFormat)
+  else { throw AudioPlayerDAAError.failedToCreatePCMBuffer }
+  try converter.convert(to: outputBuffer, from: decodedBlock.buffer)
+  ...
+}
+```
+
+Secondly, `AVAudioEngine`s nodes must be connected with the binaural `AVAudioFormat`.
+
+**Note: the step to explicity connect `AVAudioEngine`s internal `mainMixerNode` and `outputNode` is unorthodox, but crucial.**
+
+```swift
+// MusicPlayerViewModel.swift
+// VideoPlayerViewModel.swift
+private func configureEngine(with format: AVAudioFormat) {
+  ...
+  
+  // "format" is the (binaural) AVAudioFormat produced by AudioPlayerDAA
+  
+  // Most AVAudioEngine-based apps rely upon the engine to automatically connect the engine's
+  // internal "mainMixer" and "output" nodes. However, this app makes the connection explicit
+  // as it ensures audio sent to the output node is tagged as binaural. This step is crucial
+  // for managing on-device virtualization.
+  engine.attach(player)
+  engine.connect(player, to: engine.mainMixerNode, format: format)
+  engine.connect(engine.mainMixerNode, to: engine.outputNode, format: format)
+  engine.prepare()
+  
+  ...
+  
+}
+``` 
+
+If playing a concurrent `AVPlayer` instance, then an additional step is to disallow on-device virtualization using the iOS API `allowedAudioSpatializationFormats`.
+
+```swift
+// VideoPlayerViewModel.swift
+private func setupVideo(url: URL) {
+  videoPlayer = AVPlayer(url: url)
+  videoPlayer?.isMuted = true
+  videoPlayer?.currentItem?.allowedAudioSpatializationFormats = AVAudioSpatializationFormats(rawValue: 0)
+}
+```
+
 ## Configuring Loudness
 DAAPlay configures the Output Reference Loudness (ORL) to -16 LKFS.
 
@@ -370,11 +446,11 @@ dlb_decode_setparam(_decoder, DLB_DECODE_CTL_OUTPUT_REFERENCE_LEVEL_ID, &paramet
 
 
 ## Configuring DAA for the Connected Audio Device
-DAAPlay's `AudioDeviceManager` detects the currently connected audio device.
+DAAPlay's `AudioSystemManager` detects the currently connected audio device.
 
 ```swift
-class AudioDeviceManager: NSObject, ObservableObject {
-  static let shared = AudioDeviceManager()
+class AudioSystemManager: NSObject, ObservableObject {
+  static let shared = AudioSystemManager()
   @Published var headphonesConnected = false
   @Published var outputName: String = ""
   @Published var outputType: AVAudioSession.Port = .builtInSpeaker
@@ -432,7 +508,7 @@ When a new device is connected, the Video and Music players dynamically configur
 // MusicPlayerViewModel.swift
 
 // Respond to headphone connect/disconnects
-audioDeviceManager
+audioSystemManager
   .$headphonesConnected
   .sink(receiveValue: { headphonesConnected in
     _ = self.player.pauseAndResync()
@@ -445,7 +521,7 @@ audioDeviceManager
 // VideoPlayerViewModel.swift
 
 // Respond to headphone connect/disconnects
-audioDeviceManager
+audioSystemManager
   .$headphonesConnected
   .sink(receiveValue: { headphonesConnected in
     self.pauseAndRealignVideoToAudio()
@@ -463,18 +539,87 @@ func setEndpoint(endp: Endpoint) {
 }
 ```
 
+# FAQs and Known Issues
+
+<details><summary><b>Q: Can DAAPlay run on XCode's iOS Simulator?</b></summary>
+
+The iOS Simulator is not supported. The DAA library is built for the `iOS-arm64` architecture. On Intel Macs, the XCode simulator targets a `Simulator-x86_64` architecture. If trying to build for the iOS simulator, you will encounter XCode build errors:
+
+```
+⚠️ Ignoring file /path/to/DAAPlay/Audio/DAA/v3.5.7/lib/lib_daa_ac4dec_ios_generic_float32_release.a, building for iOS Simulator-x86_64 but attempting to link with file built for iOS-arm64
+❌ Undefined symbol: _dlb_decode_addbytes
+❌ Undefined symbol: _dlb_decode_close
+...
+```
+</details>
+
+<details><summary><b>Q: Why don't I hear audio when launching DAAPlay from XCode?</b></summary>
+
+There is a known issue where, occasionally, audio is decoded and sent to iOSs output mixer but not played back to users. The issue only occurs when ALL of the following are true:
+
+1. Launching DAAPlay from XCode,
+2. Playing audio over a Bluetooth endpont, and
+3. Simultaneously playing audio and video (i.e. with DAA and AVPlayer resectively)
+
+The issue is sporadic, and the root cause unknown.
+
+The workaround is to re-launch the app from XCode, or launch the app from the iOS home screen instead.
+</details>
+
+<details><summary><b>Q: Can DAA be integrated with AVSampleBufferAudioRenderer?</b></summary>
+
+Yes. `AVSampleBufferAudioRenderer` is an iOS API to play custom compressed audio. It is a lower-level API than `AVAudioEngine`, but is also well suited to DAA.
+
+The DAAPlay app is based on `AVAudioEngine` rather than `AVSampleBufferAudioRenderer`. However, there are several advantages if choosing `AVSampleBufferAudioRenderer`:
+
+* Tighter control of timing, using `CMClock`
+* Tighter AV sync via the ability to lock an `AVPlayer` instance to the same clock of an `AVSampleBufferAudioRenderer` instance
+* Access to the `AVSampleBufferAudioRenderer.allowedAudioSpatializationFormats` API
+
+Apple provides an excellent starting point for those intending to use `AVSampleBufferAudioRenderer`: [a custom audio player sample app](https://developer.apple.com/documentation/avfaudio/audio_engine/playing_custom_audio_with_your_own_player). If you want to integrate DAA with `AVSampleBufferAudioRenderer`, then please keep in mind:
+
+1. The sample app introduces the concept of a `SampleBufferSource`. This is where DAA would be called.
+2. PCM buffers (`AVAudioPCMBuffer`) produced by DAA must be tagged as binaural (`kAudioChannelLayoutTag_Binaural`), so that on-device virtualization is disabled.
+3. The sample app schedules decoding with `AVQueuedSampleBufferRendering.requestMediaDataWhenReady(on:using:)`. However, this API precludes low-latency applications (i.e., head tracking) as the API will schedule >= 1 second of PCM ahead of the render time. To implement just-in-time decoding with DAA and `AVAudioSampleBufferAudioRenderer`, one must schedule audio with a periodic timer (say 5ms) rather than `requestMediaDataWhenReady`, and limit the amount of audio buffered.  
+
+</details>
+
 # Version History
 
-## Version 1.0.2
+<details><summary>v1.1.0</summary>
+
+* Adds a modern user interface
+* Adds support for NowPlaying and remote commands
+* Documents how to manage on-device virtualization
+* Documents the option to use AVSampleBufferAudioRenderer instead of AVAudioEngine
+* Manages iOS audio session activation and deactivation
+* Allows audio playback from background
+* Disallows spatialization from AVPlayer
+* Relaxes the audio scheduling timing mechanism by ~5ms 
+* Makes each XCode bundle identifier unique
+* Adds log message when spatial playback capabilities change
+* Renames AudioDeviceManager to AudioSystemManager
+
+</details>
+
+<details><summary>v1.0.2</summary>
+
 * No functional changes
 * Replaces LFS-stored files in GitHub with native versions
 
-## Version 1.0.1
+</details>
+
+<details><summary>v1.0.1</summary>
+
 * Refers users to `dlb_mp4demux` on Github
 * Outputs PCM as float, and signals as "binaural" to iOS
 * Mitigates audio dropouts when UI animations occur by correctly prioritizing audio events with Grand Central Dispatch
 
-## Version 1.0.0
+</details>
+
+<details><summary>v1.0.0</summary>
+
 * The initial release of DAAPlay targeting DAA v3.5.7 and playback of AC-4 IMS
 
+</details>
 

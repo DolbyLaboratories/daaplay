@@ -21,22 +21,43 @@
 /// OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import Foundation
+import SwiftUI
 
-struct Constants {
-  static let NUM_CHANNELS: Int = 2
-  static let SAMPLE_RATE: Double = 48000.0
+extension Color {
+    init(hex: UInt, alpha: Double = 1) {
+        self.init(
+            .sRGB,
+            red: Double((hex >> 16) & 0xff) / 255,
+            green: Double((hex >> 08) & 0xff) / 255,
+            blue: Double((hex >> 00) & 0xff) / 255,
+            opacity: alpha
+        )
+    }
+}
+
+struct ColorScheme {
+
+  static let skyBlue = Color(hex: 0x8ECAE6)
+  static let prussianBlue = Color(hex: 0x023047)
+  static let indigoDye = Color(hex: 0x154055)
+  static let cadetGray = Color(hex: 0x8198A3)
+  static let selectiveYellow = Color(hex: 0xFFB703)
+  static let gray = Color(hex: 0x808080)
+  static let silver = Color(hex: 0xB3B3B3)
   
-  static let FIVE_MILLISECONDS: Double = 0.005
-  static let ONE_HUNDRED_MILLISECONDS: Double = 0.1
-  static let TWO_HUNDRED_AND_FIFTY_MILLISECONDS: Double = 0.25
-  
-  static let ONE_TWENTY_EIGHT_AUDIO_SAMPLES: Double = 128.0 / SAMPLE_RATE
-  static let TWO_FIFTY_SIX_AUDIO_SAMPLES: Double = 256.0 / SAMPLE_RATE
-  static let FIVE_TWELVE_AUDIO_SAMPLES: Double = 512.0 / SAMPLE_RATE
-  
-  static let AC4_SAMPLES_PER_BLOCK: Double = 256
-  static let AC4_SAMPLES_PER_FRAME: Double = 2048
-  static let AC4_SECONDS_PER_BLOCK: Double = AC4_SAMPLES_PER_BLOCK / SAMPLE_RATE
-  static let AC4_SECONDS_PER_FRAME: Double = AC4_SAMPLES_PER_FRAME / SAMPLE_RATE
-  static let DAA_AUDIO_BUFFER_SECONDS: Double = AC4_SECONDS_PER_BLOCK
+  static let foreground: Color = Color.white
+  static let foregroundDisabled: Color = ColorScheme.gray
+  static let background: Color = ColorScheme.prussianBlue
+  static let backgroundGradient: LinearGradient = LinearGradient(
+                                                    colors: [
+                                                      ColorScheme.background,
+                                                      ColorScheme.indigoDye
+                                                    ],
+                                                    startPoint: .top,
+                                                    endPoint: .center)
+  static let actionButton: Color = ColorScheme.skyBlue
+  static let progressAccent: Color = ColorScheme.selectiveYellow
+  static let progressAccentFullScreen: Color = ColorScheme.silver
+  static let toggleOff: Color = ColorScheme.cadetGray
+  static let toggleOn: Color = ColorScheme.selectiveYellow
 }

@@ -24,7 +24,7 @@ import SwiftUI
 import AVFoundation
 import Combine
 
-class MusicPlayerViewModel: NSObject, ObservableObject {
+class MusicPlayerViewModel: NSObject, RCExecutor, ObservableObject {
   static let logger = Logger(.viewModel)
   var log: Logger {
     MusicPlayerViewModel.logger
@@ -33,9 +33,10 @@ class MusicPlayerViewModel: NSObject, ObservableObject {
   // MARK: Public properties
 
   @Published var isPlayerReady = false
-  @Published var audioDeviceManager = AudioDeviceManager.shared
+  @Published var audioSystemManager = AudioSystemManager.shared
   @Published var playerProgress: Double = .zero
   @Published var elapsedTimeText: String = "00:00"
+  @Published var remainingTimeText: String = "00:00"
   @Published var state: PlayerState = .stopped
   var dismissPublisher = PassthroughSubject<Bool, Never>()
   
@@ -47,7 +48,7 @@ class MusicPlayerViewModel: NSObject, ObservableObject {
       case .scrubbing:
         return
       case .scrubEnded(let seekTime):
-        _ = player.seek(time: seekTime)
+        self.seek(to: seekTime)
         scrubState = .reset
       }
     }
@@ -68,14 +69,17 @@ class MusicPlayerViewModel: NSObject, ObservableObject {
 
   // MARK: - Public
 
-  func setup(audioURL: URL) {
+  func setup(audioURL: URL, title: String, artist: String?) {
     setupAudio(url: audioURL)
+    audioSystemManager.activate()
     displayUpdateTimer = Timer.scheduledTimer(
       timeInterval: Constants.TWO_HUNDRED_AND_FIFTY_MILLISECONDS,
       target: self,
       selector: #selector(updateDisplay),
       userInfo: nil,
       repeats: true)
+    NowPlaying.start(title: title, artist: artist, index: 0, count: 1)
+    RemoteCommand.start(using: self)
   }
   
   // MARK: - Teardown
@@ -93,6 +97,9 @@ class MusicPlayerViewModel: NSObject, ObservableObject {
     displayUpdateTimer = nil
     isPlayerReady = false
     player = AudioPlayerDAA()
+    audioSystemManager.deactivate()
+    NowPlaying.stop()
+    RemoteCommand.stop()
   }
   
   deinit {
@@ -109,7 +116,7 @@ class MusicPlayerViewModel: NSObject, ObservableObject {
       guard let avf = format else {
         return
       }
-      player.setEndpoint(endp: audioDeviceManager.headphonesConnected ? .headphones : .speakers)
+      player.setEndpoint(endp: audioSystemManager.headphonesConnected ? .headphones : .speakers)
       configureEngine(with: avf)
 
     } catch {
@@ -127,7 +134,7 @@ class MusicPlayerViewModel: NSObject, ObservableObject {
 
   private func configureEngine(with format: AVAudioFormat) {
     // Respond to headphone connect/disconnects
-    audioDeviceManager
+    audioSystemManager
       .$headphonesConnected
       .sink(receiveValue: { headphonesConnected in
         _ = self.player.pauseAndResync()
@@ -146,8 +153,15 @@ class MusicPlayerViewModel: NSObject, ObservableObject {
       })
       .store(in: &cancellables)
 
+    // "format" is the (binaural) AVAudioFormat produced by AudioPlayerDAA
+    
+    // Most AVAudioEngine-based apps rely upon the engine to automatically connect the engine's
+    // internal "mainMixer" and "output" nodes. However, this app makes the connection explicit
+    // as it ensures audio sent to the output node is tagged as binaural. This step is crucial
+    // for managing on-device virtualization.
     engine.attach(player)
     engine.connect(player, to: engine.mainMixerNode, format: format)
+    engine.connect(engine.mainMixerNode, to: engine.outputNode, format: format)
     engine.prepare()
 
     // Minimize latency due to OS's IO buffer
@@ -192,34 +206,63 @@ class MusicPlayerViewModel: NSObject, ObservableObject {
     player.pause()
   }
 
-  func skip(forwards: Bool) {
-    _ = player.seek(offset: forwards ? 10.0 : -10.0)
+  func seek(by: Double) {
+    DispatchQueue.main.async {
+      _ = self.player.seek(offset: by)
+      self.updateDisplay()
+    }
+  }
+  
+  func seek(to seekTime: Double) {
+    _ = player.seek(time: seekTime)
     updateDisplay()
   }
-
-  // MARK: Display updates
+  
+  // MARK: - Remote commands
+  
+  func executeRemote(command: Command) {
+    switch command {
+    case .pause: pause()
+    case .play: play()
+    case .togglePlayPause: togglePlayPause()
+    case .skipForward(let offset): seek(by: offset)
+    case .skipBackward(let offset): seek(by: -offset)
+    case .changePlaybackPosition(let position): seek(to: position)
+    }
+  }
+  
+  // MARK: - Display updates
 
   @objc private func updateDisplay() {
     var currentTime: TimeInterval = 0
     if state != .stopped {
       currentTime = player.progress
     }
-
+    
     currentTime = max(currentTime, 0)
     currentTime = min(currentTime, player.duration)
-
+    
     // Update the player progress and time indicators
     switch self.scrubState {
     case .reset:
       playerProgress = player.progress
       elapsedTimeText = formatMinutesSeconds(time: currentTime)
+      remainingTimeText = formatMinutesSeconds(time: ceil(player.duration - currentTime))
     case .scrubbing:
       elapsedTimeText = formatMinutesSeconds(time: playerProgress)
+      remainingTimeText = formatMinutesSeconds(time: ceil(player.duration - playerProgress))
     case .scrubEnded(let seekTime):
       scrubState = .reset
       playerProgress = seekTime
       elapsedTimeText = formatMinutesSeconds(time: playerProgress)
+      remainingTimeText = formatMinutesSeconds(time: ceil(player.duration - playerProgress))
     }
+    NowPlaying.update(
+      playing: state == .playing,
+      rate: state == .playing ? 1.0 : 0.0,
+      position: player.progress,
+      duration: player.duration
+    )
   }
 
 }
