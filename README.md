@@ -39,7 +39,7 @@ Encountered a problem? See the [FAQs and known issues](#faqs-and-known-issues).
 # Features
 
 DAAPlay implements:
-* Integration of DAA with AVAudioEngine
+* Integration of DAA with `AVAudioEngine`
 * Playback of .ac4 files
 * Playback of AC-4 up to Level 3, including AC-4 Immersive Stereo (IMS)
 * Playback of AC-4 at a frame rate of 2048 samples/frame (a.k.a. *native* frame rate)
@@ -52,6 +52,7 @@ DAAPlay implements:
 * Content selection menu
 
 DAAPlay does not implement:
+* Integration of DAA with `AVSampleBufferAudioRenderer`
 * Playback of AC-4 Level 4 A-JOC
 * Playback of Dolby Digital Plus (DD+) or DD+JOC
 * Playback of AC-4 encoded at video-aligned frame rates
@@ -65,37 +66,53 @@ DAAPlay does not implement:
 
 ## Tested Devices
 
-* iPhone 13 Pro with iOS 16.4, and AirPods (3rd generation) and AirPods Max
+iPhone 13 Pro with iOS 16.4, and AirPods (3rd generation) and AirPods Max
 
 # Architecture and Code Layout
 
 ![Screenshot](img/architecture.png)
 
-* `DAAPlay/DAAPlayMain.swift`: main entry point
-* `DAAPlay/Views/`: User interfaces (views), written in SwiftUI
-* `DAAPlay/Models/`: View models associated with views, written in Swift
-* `DAAPlay/Audio/`: Audio player
-* `DAAPlay/Audio/AudioPlayerDAA.swift`: AVAudioEngine audio player, based on DAA
-* `DAAPlay/Audio/DAA/DAADecoder.[h|m]`: DAA wrapper, written in Objective-C
-* `DAAPlay/Audio/DAA/v3.57/[include|lib]`: Add DAA libraries and headers here
-* `DAAPlay/Video/`: Video player helpers
-* `DAAPlay/Utilities/`: Miscellaneous utility functions
-* `DAAPlay/Supporting Files/Media`: Bundled media files
-* `DAAPlay/Supporting Files/Media/contentPackingList`: Play list, in .json format
+| Location      | Code          |
+| ------------- | ------------- |
+| `DAAPlay/DAAPlayMain.swift` | Main entry point |
+| `DAAPlay/Views/` | User interfaces (views), written in SwiftUI |
+| `DAAPlay/Models/` | View models associated with views, written in Swift |
+| `DAAPlay/Audio/` | Audio player |
+| `DAAPlay/Audio/AudioPlayerDAA.swift` | AVAudioEngine audio player, based on DAA |
+| `DAAPlay/Audio/DAA/DAADecoder.[h\|m]` | DAA wrapper, written in Objective-C |
+| `DAAPlay/Audio/DAA/v3.57/[include\|lib]` | Add DAA libraries and headers here |
+| `DAAPlay/Video/` | Video player helpers |
+| `DAAPlay/Utilities/` | Miscellaneous utility functions |
+| `DAAPlay/Supporting Files/Media` | Bundled media files |
+| `DAAPlay/Supporting Files/Media/contentPackingList` | Play list, in .json format |
 
 
 # Developer Guidance
+
+* [Enabling MP4 demuxing and HTTP Live Streaming](#enabling-mp4-demuxing-and-http-live-streaming)
+* [Integrating DAA with AVAudioEngine](#integrating-daa-with-avaudioengine)
+* [Integrating DAA with AVSampleBufferAudioRenderer](#integrating-daa-with-avsamplebufferaudiorenderer)
+* [Minimizing Output Latency](#minimizing-output-latency)
+* [Managing On-Device Virtualization](#managing-on-device-virtualization)
+* [Configuring Loudness](#configuring-loudness)
+* [Configuring DAA for the Connected Audio Device](#configuring-daa-for-the-connected-audio-device)
+* [Integrating Video Playback with DAA](#integrating-video-playback-with-daa)
+* [Synchronizing Audio and Video (A/V Sync)](#synchronizing-audio-and-video-av-sync)
+   - [Zeroing of DAA Algorithmic Latency](#zeroing-of-daa-algorithmic-latency)
+   - [Precise AVPlayer Seeking Operations](#precise-avplayer-seeking-operations)
+   - [Interrupting Scheduling When Seeking](#interrupting-scheduling-when-seeking)
+
 
 ## Enabling MP4 demuxing and HTTP Live Streaming
 DAAPlay does not implement MP4 demuxing or HTTP Live Streaming (HLS), however Dolby provides developer resources at: [https://ott.dolby.com](https://ott.dolby.com).
 
 Additionally, source code for a Dolby MP4 demuxer is available on Github: [https://github.com/DolbyLaboratories/dlb_mp4demux](https://github.com/DolbyLaboratories/dlb_mp4demux)  
 
-## Integrating DAA into iOS
+## Integrating DAA with AVAudioEngine
 
 Apple offers developers several API options for implementing audio functionality, including `CoreAudio`, `AUGraph`, `AVSampleBufferAudioRenderer`, `AVAudioEngine`, `AVAudioPlayer`, and `AVPlayer`. Each option offers a different trade-off of flexibility, complexity, and abstraction.
 
-DAAPlay integrates DAA with the `AVAudioEngine` API. `AVAudioEngine` is the API with the highest level of abstraction that still has the flexibility needed to integrate DAA.
+**DAAPlay integrates DAA with the `AVAudioEngine` API.** `AVAudioEngine` is the API with the highest level of abstraction that still has the flexibility needed to integrate DAA.
 
 ```swift
 // AudioPlayerDAA.swift
@@ -114,7 +131,21 @@ engine.connect(player, to: engine.mainMixerNode, format: format)
 try engine.start()
 ```
 
-**Note:** `AVSampleBufferAudioRenderer` is an alternate option to `AVAudioEngine`. The [FAQs](#faqs-and-known-issues) include guidance on integrating DAA with `AVSampleBufferAudioRenderer`.
+## Integrating DAA with AVSampleBufferAudioRenderer
+
+`AVSampleBufferAudioRenderer` is an iOS API to play custom compressed audio. It is a lower-level API than `AVAudioEngine`, but is also well suited to DAA.
+
+**The DAAPlay app is based on `AVAudioEngine` rather than `AVSampleBufferAudioRenderer`**. However, there are several advantages if choosing `AVSampleBufferAudioRenderer`:
+
+* Tighter control of timing, using `CMClock`
+* Tighter AV sync via the ability to lock an `AVPlayer` instance to the same clock of an `AVSampleBufferAudioRenderer` instance
+* Access to the `AVSampleBufferAudioRenderer.allowedAudioSpatializationFormats` API
+
+Apple provides an [excellent sample application](https://developer.apple.com/documentation/avfaudio/audio_engine/playing_custom_audio_with_your_own_player) for those intending to use `AVSampleBufferAudioRenderer`. If you want to integrate DAA with `AVSampleBufferAudioRenderer`, then please keep in mind:
+
+1. The sample app introduces the concept of a `SampleBufferSource`. This is where DAA would be called.
+2. PCM buffers (`AVAudioPCMBuffer`) produced by DAA must be tagged as binaural (`kAudioChannelLayoutTag_Binaural`), so that on-device virtualization is disabled.
+3. The sample app schedules decoding with `AVQueuedSampleBufferRendering.requestMediaDataWhenReady(on:using:)`. However, this API precludes low-latency applications (i.e., head tracking) as the API will schedule >= 1 second of PCM ahead of the render time. To implement just-in-time decoding with DAA and `AVAudioSampleBufferAudioRenderer`, one must schedule audio with a periodic timer (say 5ms) rather than `requestMediaDataWhenReady`, and limit the amount of audio buffered.
 
 
 ## Minimizing Output Latency
@@ -233,139 +264,8 @@ private func configureEngine(with format: AVAudioFormat) {
 }
 ```
 
-
-## Integrating Video Playback with DAA
-DAAPlay utilizes `AVPlayer` for video playback and `AVAudioEngine` for audio. These players are independent, but jointly managed by the `VideoPlayerViewModel`. Note that the AVPlayer is muted.
-
-A complication is that `AVAudioEngine` output is subject to a latency that is unaccounted for by `AVPlayer`, resulting in a loss of A/V sync. To mitigate this, DAAPlay offsets audio and video play/pause operations by `audioOutputLatency`.
-
-```swift
-// VideoPlayerViewModel.swift
-var videoPlayer: AVPlayer?
-var audioPlayer = AudioPlayerDAA()
-private let engine = AVAudioEngine()
-private var audioOutputLatency: TimeInterval = 0
-
-...
-
-private func setupVideo(url: URL) {
-  videoPlayer = AVPlayer(url: url)
-  videoPlayer?.isMuted = true
-}
-
-...
-
-func play() {
-  self.audioOutputLatency = self.engine.mainMixerNode.outputPresentationLatency
-  let isStartOfStream = audioPlayer.playAndDetectStartOfStream()
-  if isStartOfStream {
-    seekVideo(to: 0) { _ in
-      DispatchQueue.main.asyncAfter(deadline: .now() + self.audioOutputLatency) {
-        self.videoPlayer?.play()
-      }
-    }
-  } else {
-    DispatchQueue.main.asyncAfter(deadline: .now() + self.audioOutputLatency) {
-      self.videoPlayer?.play()
-    }
-  }
-}
-
-func pause() {
-  audioPlayer.pause()
-  DispatchQueue.main.asyncAfter(deadline: .now() + self.audioOutputLatency) {
-    self.videoPlayer?.pause()
-  }
-}
-```
-
-## Synchronizing Audio and Video (A/V Sync)
-To achieve A/V sync, DAAPlay minimizes output latency, performs just-in-time decoding, offsets play/pause operations between `AVPlayer` and `AVAudioEngine`, and corrects for loss of sync when audio devices are connected or disonnected. These are described above.
-
-To further ensure A/V sync, DAA also implements the following: 
-1. Zeroing of DAA algorithmic latency
-2. Precise AVPlayer seeking operations
-3. Interrupting scheduling when seeking
-
-### Zeroing of DAA Algorithmic Latency
-`DAADecoder` zeros (i.e. removes, consumes) its own algorithmic latency (3168 samples, for AC-4 inputs at native frame rate). Hence the zero point on the audio timeline corresponds to the first sample associated with an AC-4 frame. The benefit is that the timeline of an associated AVPlayer does need adjustment to compensate for DAA latency.
-
-```swift
-// DAADecoder.m
-createDecoderFor() {
-  ...
-  _startUpSamples = ESTIMATED_LATENCY;
-}
-
-decode()
-  ...
-  /* Decode */
-  err = dlb_decode_process(_decoder, &ioParams);
-  ...
-  
-  // Consume "start-up samples"
-  if (_startUpSamples > 0) {
-    long long samplesToCopy = ioParams.output_samples_num - _startUpSamples;
-
-    if (samplesToCopy <= 0) {
-        // Empty frame: Consume all the samples and output a zero frame
-        ...
-    } else {
-        // Partial frame: Consume the first _startUpSamples samples and output the rest
-        ...
-    }
-        
-  } else {
-    // Output a regular frame (2048 samples)
-    ...
-  }
-}
-``` 
-
-### Precise AVPlayer Seeking Operations
-`VideoPlayerViewModel.seekVideo()` implements precise seeking, so that AVPlayer remains in sync with AVAudioEngine 
-
-```swift
-// VideoPlayerViewModel.swift
-private func seekVideo(to newTime: Float64, completionHandler: @escaping (Bool) -> Void) {
-  let newCMTime = CMTimeMakeWithSeconds(
-    newTime,
-    preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-  videoPlayer?.seek(
-    to: newCMTime,
-    toleranceBefore: CMTime.zero,
-    toleranceAfter: CMTime.zero,
-    completionHandler: completionHandler)
-  }
-```
-
-### Interrupting Scheduling When Seeking
-When seeking, DAAPlay overwrites un-rendered audio in AVAudioEngine's output buffer (i.e. audio from the old playback point), with new audio. The AVAudioEngine APIs refer to this as "interrupting". This approach prevents loss of A/V sync when seeking due to un-rendered audio in AVAudioEngine output buffer.
-```swift
-// AudioPlayerDAA.swift
-func seek(frame: Int) -> Double {
-  ...
-  // Any playing buffer should be interrupted upon restart
-  interruptPlayingBuffer = true
-}
-
-func scheduleNextAudio() throws {
-  ...
-  // If interrupting, the next buffer should overwrite un-rendered audio in AVAudioEngine's output buffer
-  var options: AVAudioPlayerNodeBufferOptions = []
-  if interruptPlayingBuffer {
-    options.insert(.interrupts)
-    interruptPlayingBuffer = false
-  }
-  
-  ...
-  
-  // Schedule buffer
-  scheduleBuffer(..., options: options)
-}
-```
-
 ## Managing On-Device Virtualization
+
 **It is incorrect to apply virtualization twice.** When decoding, DAA will produced a virtualized output and therefore iOS's native virtualization (i.e. "Spatial Audio") should be disabled.
 
 A complication is that iOS does not provide APIs to directly control the native virtualization when using `AVAudioEngine`. Instead, one must signal to iOS that PCM produced by DAA is binaural. This is a two-step process.
@@ -375,9 +275,9 @@ Firstly, PCM buffers (`AVAudioPCMBuffer`) produced by DAA must be tagged with `k
 ```swift
 // AudioPlayerDAA.swift
 private let binauralFormat = AVAudioFormat(
-standardFormatWithSampleRate: Constants.SAMPLE_RATE,
-channelLayout: AVAudioChannelLayout(
-  layoutTag: kAudioChannelLayoutTag_Binaural)!
+  standardFormatWithSampleRate: Constants.SAMPLE_RATE,
+  channelLayout: AVAudioChannelLayout(
+    layoutTag: kAudioChannelLayoutTag_Binaural)!
 )
 
 ...
@@ -539,6 +439,138 @@ func setEndpoint(endp: Endpoint) {
 }
 ```
 
+
+## Integrating Video Playback with DAA
+DAAPlay utilizes `AVPlayer` for video playback and `AVAudioEngine` for audio. These players are independent, but jointly managed by the `VideoPlayerViewModel`. Note that the AVPlayer is muted.
+
+A complication is that `AVAudioEngine` output is subject to a latency that is unaccounted for by `AVPlayer`, resulting in a loss of A/V sync. To mitigate this, DAAPlay offsets audio and video play/pause operations by `audioOutputLatency`.
+
+```swift
+// VideoPlayerViewModel.swift
+var videoPlayer: AVPlayer?
+var audioPlayer = AudioPlayerDAA()
+private let engine = AVAudioEngine()
+private var audioOutputLatency: TimeInterval = 0
+
+...
+
+private func setupVideo(url: URL) {
+  videoPlayer = AVPlayer(url: url)
+  videoPlayer?.isMuted = true
+}
+
+...
+
+func play() {
+  self.audioOutputLatency = self.engine.mainMixerNode.outputPresentationLatency
+  let isStartOfStream = audioPlayer.playAndDetectStartOfStream()
+  if isStartOfStream {
+    seekVideo(to: 0) { _ in
+      DispatchQueue.main.asyncAfter(deadline: .now() + self.audioOutputLatency) {
+        self.videoPlayer?.play()
+      }
+    }
+  } else {
+    DispatchQueue.main.asyncAfter(deadline: .now() + self.audioOutputLatency) {
+      self.videoPlayer?.play()
+    }
+  }
+}
+
+func pause() {
+  audioPlayer.pause()
+  DispatchQueue.main.asyncAfter(deadline: .now() + self.audioOutputLatency) {
+    self.videoPlayer?.pause()
+  }
+}
+```
+
+## Synchronizing Audio and Video (A/V Sync)
+To achieve A/V sync, DAAPlay minimizes output latency, performs just-in-time decoding, offsets play/pause operations between `AVPlayer` and `AVAudioEngine`, and corrects for loss of sync when audio devices are connected or disonnected. These are described above.
+
+To further ensure A/V sync, DAA also implements the following: 
+1. Zeroing of DAA algorithmic latency
+2. Precise AVPlayer seeking operations
+3. Interrupting scheduling when seeking
+
+### Zeroing of DAA Algorithmic Latency
+`DAADecoder` zeros (i.e. removes, consumes) its own algorithmic latency (3168 samples, for AC-4 inputs at native frame rate). Hence the zero point on the audio timeline corresponds to the first sample associated with an AC-4 frame. The benefit is that the timeline of an associated AVPlayer does need adjustment to compensate for DAA latency.
+
+```swift
+// DAADecoder.m
+createDecoderFor() {
+  ...
+  _startUpSamples = ESTIMATED_LATENCY;
+}
+
+decode()
+  ...
+  /* Decode */
+  err = dlb_decode_process(_decoder, &ioParams);
+  ...
+  
+  // Consume "start-up samples"
+  if (_startUpSamples > 0) {
+    long long samplesToCopy = ioParams.output_samples_num - _startUpSamples;
+
+    if (samplesToCopy <= 0) {
+        // Empty frame: Consume all the samples and output a zero frame
+        ...
+    } else {
+        // Partial frame: Consume the first _startUpSamples samples and output the rest
+        ...
+    }
+        
+  } else {
+    // Output a regular frame (2048 samples)
+    ...
+  }
+}
+``` 
+
+### Precise AVPlayer Seeking Operations
+`VideoPlayerViewModel.seekVideo()` implements precise seeking, so that AVPlayer remains in sync with AVAudioEngine 
+
+```swift
+// VideoPlayerViewModel.swift
+private func seekVideo(to newTime: Float64, completionHandler: @escaping (Bool) -> Void) {
+  let newCMTime = CMTimeMakeWithSeconds(
+    newTime,
+    preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+  videoPlayer?.seek(
+    to: newCMTime,
+    toleranceBefore: CMTime.zero,
+    toleranceAfter: CMTime.zero,
+    completionHandler: completionHandler)
+  }
+```
+
+### Interrupting Scheduling When Seeking
+When seeking, DAAPlay overwrites un-rendered audio in AVAudioEngine's output buffer (i.e. audio from the old playback point), with new audio. The AVAudioEngine APIs refer to this as "interrupting". This approach prevents loss of A/V sync when seeking due to un-rendered audio in AVAudioEngine output buffer.
+```swift
+// AudioPlayerDAA.swift
+func seek(frame: Int) -> Double {
+  ...
+  // Any playing buffer should be interrupted upon restart
+  interruptPlayingBuffer = true
+}
+
+func scheduleNextAudio() throws {
+  ...
+  // If interrupting, the next buffer should overwrite un-rendered audio in AVAudioEngine's output buffer
+  var options: AVAudioPlayerNodeBufferOptions = []
+  if interruptPlayingBuffer {
+    options.insert(.interrupts)
+    interruptPlayingBuffer = false
+  }
+  
+  ...
+  
+  // Schedule buffer
+  scheduleBuffer(..., options: options)
+}
+```
+
 # FAQs and Known Issues
 
 <details><summary><b>Q: Can DAAPlay run on XCode's iOS Simulator?</b></summary>
@@ -564,24 +596,6 @@ There is a known issue where, occasionally, audio is decoded and sent to iOSs ou
 The issue is sporadic, and the root cause unknown.
 
 The workaround is to re-launch the app from XCode, or launch the app from the iOS home screen instead.
-</details>
-
-<details><summary><b>Q: Can DAA be integrated with AVSampleBufferAudioRenderer?</b></summary>
-
-Yes. `AVSampleBufferAudioRenderer` is an iOS API to play custom compressed audio. It is a lower-level API than `AVAudioEngine`, but is also well suited to DAA.
-
-The DAAPlay app is based on `AVAudioEngine` rather than `AVSampleBufferAudioRenderer`. However, there are several advantages if choosing `AVSampleBufferAudioRenderer`:
-
-* Tighter control of timing, using `CMClock`
-* Tighter AV sync via the ability to lock an `AVPlayer` instance to the same clock of an `AVSampleBufferAudioRenderer` instance
-* Access to the `AVSampleBufferAudioRenderer.allowedAudioSpatializationFormats` API
-
-Apple provides an excellent starting point for those intending to use `AVSampleBufferAudioRenderer`: [a custom audio player sample app](https://developer.apple.com/documentation/avfaudio/audio_engine/playing_custom_audio_with_your_own_player). If you want to integrate DAA with `AVSampleBufferAudioRenderer`, then please keep in mind:
-
-1. The sample app introduces the concept of a `SampleBufferSource`. This is where DAA would be called.
-2. PCM buffers (`AVAudioPCMBuffer`) produced by DAA must be tagged as binaural (`kAudioChannelLayoutTag_Binaural`), so that on-device virtualization is disabled.
-3. The sample app schedules decoding with `AVQueuedSampleBufferRendering.requestMediaDataWhenReady(on:using:)`. However, this API precludes low-latency applications (i.e., head tracking) as the API will schedule >= 1 second of PCM ahead of the render time. To implement just-in-time decoding with DAA and `AVAudioSampleBufferAudioRenderer`, one must schedule audio with a periodic timer (say 5ms) rather than `requestMediaDataWhenReady`, and limit the amount of audio buffered.  
-
 </details>
 
 # Version History
