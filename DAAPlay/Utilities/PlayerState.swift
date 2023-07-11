@@ -26,4 +26,5 @@ public enum PlayerState: String {
   case stopped
   case paused
   case playing
+  case scrubbing
 }

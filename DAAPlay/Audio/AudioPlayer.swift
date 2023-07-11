@@ -25,6 +25,7 @@ import AVFoundation
 import Combine
 
 public protocol AudioPlayer: AVAudioPlayerNode {
+  var state: PlayerState { get }
   var statePublisher: Published<PlayerState>.Publisher { get }
   var progress: Double { get }
   var duration: TimeInterval { get }

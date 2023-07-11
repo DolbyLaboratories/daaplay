@@ -49,7 +49,6 @@ class VideoPlayerViewModel: NSObject, RCExecutor, ObservableObject {
         return
       case .scrubEnded(let seekTime):
         self.seek(to: seekTime)
-        scrubState = .reset
       }
     }
   }
@@ -158,15 +157,8 @@ class VideoPlayerViewModel: NSObject, RCExecutor, ObservableObject {
       .statePublisher
       .receive(on: RunLoop.main)
       .sink(receiveValue: { state in
-        if state != self.state {
-          self.state = state
-        }
-        
-        if let videoPlayer = self.videoPlayer {
-          if state == .paused && videoPlayer.isPlaying {
-            videoPlayer.pause()
-          }
-        }
+        // Ignore scrubbing states
+        self.state = state == .scrubbing ? self.state : state
       })
       .store(in: &cancellables)
     
@@ -317,7 +309,9 @@ class VideoPlayerViewModel: NSObject, RCExecutor, ObservableObject {
       elapsedTimeText = formatMinutesSeconds(time: playerProgress)
       remainingTimeText = formatMinutesSeconds(time: ceil(audioPlayer.duration - playerProgress))
     case .scrubEnded(let seekTime):
-      scrubState = .reset
+      if audioPlayer.state != .scrubbing {
+        scrubState = .reset
+      }
       playerProgress = seekTime
       elapsedTimeText = formatMinutesSeconds(time: playerProgress)
       remainingTimeText = formatMinutesSeconds(time: ceil(audioPlayer.duration - playerProgress))

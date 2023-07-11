@@ -49,7 +49,6 @@ class MusicPlayerViewModel: NSObject, RCExecutor, ObservableObject {
         return
       case .scrubEnded(let seekTime):
         self.seek(to: seekTime)
-        scrubState = .reset
       }
     }
   }
@@ -147,9 +146,8 @@ class MusicPlayerViewModel: NSObject, RCExecutor, ObservableObject {
       .statePublisher
       .receive(on: RunLoop.main)
       .sink(receiveValue: { state in
-        if state != self.state {
-          self.state = state
-        }
+        // Ignore scrubbing states
+        self.state = state == .scrubbing ? self.state : state
       })
       .store(in: &cancellables)
 
@@ -252,7 +250,9 @@ class MusicPlayerViewModel: NSObject, RCExecutor, ObservableObject {
       elapsedTimeText = formatMinutesSeconds(time: playerProgress)
       remainingTimeText = formatMinutesSeconds(time: ceil(player.duration - playerProgress))
     case .scrubEnded(let seekTime):
-      scrubState = .reset
+      if player.state != .scrubbing {
+        scrubState = .reset
+      }
       playerProgress = seekTime
       elapsedTimeText = formatMinutesSeconds(time: playerProgress)
       remainingTimeText = formatMinutesSeconds(time: ceil(player.duration - playerProgress))

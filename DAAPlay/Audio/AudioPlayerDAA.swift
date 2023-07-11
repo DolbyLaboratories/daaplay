@@ -237,7 +237,11 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
   }
   
   override func pause() {
-    state = .paused
+    self.pause(.paused)
+  }
+  
+  func pause(_ newState: PlayerState) {
+    state = newState
     super.pause()
   }
   
@@ -324,32 +328,46 @@ class AudioPlayerDAA: AVAudioPlayerNode, AudioPlayer, ObservableObject {
   }
   
   func seek(frame: Int) -> Double {
-    let wasPlaying = state == .playing
-    var seekFrame = frame
+    var nextScheduledTime: Double = 0
+    let group = DispatchGroup()
+    group.enter()
     
-    // Don't seek before the start
-    seekFrame = max(seekFrame, 0)
-    
-    // Do not seek if the seek would take us past the end
-    if seekFrame > parser.frames.count - 1 {
-      return Double(parser.frames.count) * Constants.AC4_SECONDS_PER_FRAME
+    self.daaDecoderQueue.async {
+      let wasPlaying = self.state == .playing
+      var seekFrame = frame
+      
+      // Don't seek before the start
+      seekFrame = max(seekFrame, 0)
+      
+      // Do not seek if the seek would take us past the end
+      if seekFrame > self.parser.frames.count - 1 {
+        nextScheduledTime = Double(self.parser.frames.count) * Constants.AC4_SECONDS_PER_FRAME
+        group.leave()
+        return
+      }
+      
+      // Determine the next vaue of scheduledTime
+      nextScheduledTime = Double(seekFrame) * Constants.AC4_SECONDS_PER_FRAME
+      
+      // Pause the player
+      self.pause(.scrubbing)
+        
+      // Adjust timing
+      self.renderTimeEpochAdjustment -= Double(seekFrame - self.currentFrame) * Constants.AC4_SECONDS_PER_FRAME
+      self.currentFrame = seekFrame
+      self.scheduledTime = nextScheduledTime
+      
+      // Any playing buffer should be interrupted upon restart
+      self.interruptPlayingBuffer = true
+      
+      if wasPlaying {
+        self.play()
+      }
+      group.leave()
     }
     
-    pause()
-    
-    // Adjust timing
-    renderTimeEpochAdjustment -= Double(seekFrame - currentFrame) * Constants.AC4_SECONDS_PER_FRAME
-    currentFrame = seekFrame
-    scheduledTime = Double(seekFrame) * Constants.AC4_SECONDS_PER_FRAME
-    
-    // Any playing buffer should be interrupted upon restart
-    interruptPlayingBuffer = true
-    
-    if wasPlaying {
-      play()
-    }
-    
-    return scheduledTime
+    group.wait()
+    return nextScheduledTime
   }
 }
 
